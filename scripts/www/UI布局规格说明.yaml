@@ -1,0 +1,504 @@
+# UI 布局规格说明（可复用 · YAML）
+# 单一数据源生成；尺寸均为设计基准 px（--ui=1 时），运行时 ×--ui
+meta:
+  product: "地理3D实验室——地球运动&太阳视运动（单页 Web 应用）"
+  spec_purpose: 导出可被其他软件直接复用的 UI 布局规格（层级 / 尺寸 / 图层 / 状态 / 交互）
+  tree_format: component-tree（YAML / JSON 同构）；描述语言：简体中文
+  base_resolution: "<PLACEHOLDER: 产品源码未固化基准分辨率；应用为全窗口自适应（#gl/#svCanvas position:fixed inset:0），标题栏为固定高 78px·ui。建议标注为「设计基准视口 = 1280×720 或 1920×1080（待与作者确认）」>"
+  scaling:
+    model: CSS 自定义属性乘子（css-custom-property-multiplier）
+    root_variable: --ui
+    formula: --ui = (--uiW) × (--uiH)；所有像素尺寸 = 设计基准值 × --ui
+    declared_but_inactive: "源码 :root 默认 --uiW:1; --uiH:1（即 --ui=1）。按视口尺寸驱动 --uiW/--uiH 的 JS 在当前 shipped 代码中未实现（仅 tools/_probe_overflow.js 测试桩出现）。"
+    actual_adaptation: "实际自适应由 CSS @media 断点承担：源码含 @media 块在窄宽度（约 828px / 1100px 附近）调整标题栏内边距/间距/字号与换行。"
+    media_breakpoints: "<PLACEHOLDER: 需确认具体断点宽度与对应覆盖规则；源码 style.css 中 @media 位于约 line 678 / 827 / 1103 / 1146 / 1162 / 1331 等处>"
+  theme:
+    modes: "body[data-mode=\"light\"]（默认）| body[data-mode=\"dark\"]"
+    glass: "毛玻璃（backdrop-filter: blur），透明度由 --glass-head/--glass-fly/--glass-ctl 变量控制"
+    rounded_corner_base: --r = 14px × --ui（圆角统一基准，按钮/卡片/浮层共用）
+    panel_padding_x: --pad-x = 16px × --ui（卡片水平内边距；含 .card-head 的表头负 margin 抵消量需与之相等，否则左右留 1px 缝隙）
+  typography:
+    family_var: "--ui-font（默认 \"PingFang SC\",\"Microsoft YaHei\",...）"
+    size_var: --ui-fs（倍率，默认 1；由「全局文字样式」滑块写入）
+    weight_vars:
+      - --ui-fw = 400（正文基准字重）
+      - --ui-fw-m = 600（中粗：标题/分组名）
+      - --ui-fw-b = 700/800（加粗：大标题/强调）
+    note: 菜单/面板文字统一受 --ui-fs 倍率总控；单独精灵不再各自记录标称距离。
+topMenuBar:
+  container:
+    id: titleBar
+    tag: header
+    dock: "fixed; top:0; left:0; right:0"
+    height: 78px × --ui（--tb-h）
+    padding: 0 20px × --ui（左右内边距）；gap 13px × --ui
+    bg: "毛玻璃；底部 1px 分隔线（light: rgba(15,23,42,.08)；dark: rgba(255,255,255,.12)）"
+    z_index: 15
+    children_order:
+      - badgeView（地球 SVG 徽标）
+      - "tb-text（主副标题：地理3D实验室——地球运动&太阳视运动 + 制作者徽标）"
+      - btnImmersive（沉浸模式）
+      - "segView（模块/视图一行式切换，margin-left:auto 推到右侧）"
+      - btnPanelMenu2（面板与悬浮窗）
+      - flyPanelMenu2（面板菜单浮层，默认隐藏）
+  brand_text:
+    h1_font: 主名 .tb-brand 23px×--ui-fs 加粗 800；破折号 .tb-dash 15px；副名 .tb-sub 14.5px 中粗 600
+    layout: "flex baseline；窄屏（@media）允许换行 line-height 1.15"
+  module_switcher:
+    id: segView
+    tag: div.tbm2
+    structure:
+      row: div.tbm2-row（flex; gap 6px×--ui; align-items center; flex-wrap wrap）
+      level1_buttons:
+        - id: data-lv1=earth
+          label: 🌍 地球运动
+          action: 切换模块，显示对应 level2 分组
+        - id: data-lv1=sun
+          label: ☀️ 太阳视运动
+          action: 切换模块，显示对应 level2 分组
+      separator: span.tbm2-sep（竖分隔）
+      level2_group:
+        note: "data-lv2grp=\"earth\" 与 \"sun\" 互斥显示（.on 控制 display:flex）"
+        earth_views:
+          - id: data-view=rotate
+            label: 自转视图
+            drop: dropMode（单窗/三窗）
+          - id: data-view=revolve
+            label: 公转视图
+            drop: dropOrbCam（全景/特写）
+          - id: data-view=combo
+            label: 综合视图
+            drop: dropComboMode（一致/简洁）
+        sun_views:
+          - id: data-sunview=ground
+            label: 地面视图（无下拉）
+          - id: data-sunview=sky
+            label: 天球视图（无下拉）
+          - id: data-sunview=combo
+            label: 综合视图（无下拉）
+    button_dims:
+      height: 30px × --ui（--tbm-h；.btn 同高）
+      padding: 0 12px × --ui（左右）；圆角 9px × --ui
+      font: "12px × --ui × --ui-fs；窄屏 @media 降到 9px 内边距"
+      icon: emoji 前缀（🌍/☀️ 等）
+    dropdown:
+      id: tbm2-drop（每个 level2 一项：dropMode/dropOrbCam/dropComboMode）
+      trigger: button.tbm2-more（▾）点击切换
+      position: "absolute; top: calc(100% + 5px); right:0"
+      z_index: 40
+      item_states: 选中项 .on：accent 背景 + 白字 + ✓ 前缀；hover：accent 文字 + 浅蓝底
+      options:
+        dropMode:
+          - label: 单窗
+          - label: 三窗
+            default_on: true
+        dropOrbCam:
+          - label: 全景
+            default_on: true
+          - label: 特写
+        dropComboMode:
+          - label: 一致
+          - label: 简洁
+            default_on: true
+  buttons_right:
+    btnImmersive:
+      label: 沉浸模式
+      height: 30px×--ui（--tbm-h）
+      padding: 0 12px×--ui
+      icon: SVG 四角展开
+      action: 隐藏所有面板与标题栏，仅显示地球；Esc 退出
+    btnPanelMenu2:
+      label: 面板与悬浮窗
+      height: 30px×--ui
+      padding: 0 12px×--ui
+      icon: SVG 面板
+      action: 打开 flyPanelMenu2 浮层（z60）列出所有面板/悬浮窗显隐开关
+panels:
+  - id: optsCard
+    title: 设置（地球运动侧主设置）
+    kind: card
+    dock: "fixed; left:16px×--ui; top:calc(--tb-h + 12px×--ui)（--dock-top）"
+    size:
+      defaultW: 292
+      defaultH: "<PLACEHOLDER: 内容自适应；需实测展开态高度>"
+      minW: 252
+      minH: 140
+      ar:
+        - 0.42
+        - 2.4
+      note: "尺寸基准 px；运行时 ×--ui；ar 为宽高比[min,max]"
+    z_index: "<PLACEHOLDER: 卡片层：位于画布(#gl z auto)之上、标题栏(z15)之下，未显式声明 z-index，按 DOM 顺序堆叠>"
+    flags:
+      draggable: true
+      resizable: true
+      collapsible: true
+      closable: false
+    collapse: header 链接「收起」→ .collapsed（隐藏 .card-body）
+    closable_note: 无关闭按钮；显隐由「界面与主题 › 面板与悬浮窗」开关控制
+  - id: timeCard
+    title: 时间（地球运动侧）
+    kind: card
+    dock: "fixed; right:16px×--ui; top:--dock-top"
+    size:
+      defaultW: 336
+      defaultH: "<PLACEHOLDER: 内容自适应>"
+      minW: 260
+      minH: 130
+      ar:
+        - 0.46
+        - 2.6
+    z_index: "<PLACEHOLDER: 同 optsCard，卡片层>"
+    flags:
+      draggable: true
+      resizable: true
+      collapsible: true
+      closable: false
+    collapse: header「折叠」→ .min（仅保留头部，隐藏 t-block/terms/sb/facts；宽度 auto）
+    closable_note: 无关闭按钮；显隐由面板菜单控制
+  - id: geoInfo
+    title: 观测点数据
+    kind: card
+    dock: fixed; 默认隐藏（.on 才显示）；位于时间面板左侧
+    size:
+      defaultW: "<PLACEHOLDER: 内容自适应>"
+      defaultH: "<PLACEHOLDER: 内容自适应>"
+      minW: 220
+      minH: 110
+      ar:
+        - 0.55
+        - 2.4
+    z_index: "<PLACEHOLDER: 卡片层>"
+    flags:
+      draggable: true
+      resizable: true
+      collapsible: true
+      closable: false
+    collapse: header 链接 → .gi-min（隐藏 .gi-body；宽度 auto）
+  - id: controlBar
+    title: 底部控制条
+    kind: controlbar
+    dock: "fixed; left:50%; bottom:14px×--ui; transform:translateX(-50%)（水平居中贴底）"
+    size:
+      defaultW: "<PLACEHOLDER: 内容自适应宽度>"
+      defaultH: "<PLACEHOLDER: 内容自适应>"
+      minW: 400
+      minH: 112
+      ar:
+        - 1.3
+        - 6
+      note: ar 来自 bar 类；内含分组：播放/速度、视角、参考系、重置
+    z_index: 12
+    flags:
+      draggable: true
+      resizable: false
+      collapsible: true
+      closable: false
+    collapse: cb-toggle「收起」→ .min（隐藏 .cb-group/.cb-sep，仅留抓手与切换箭头）
+    drag: cb-grip 抓手拖拽整体移动；双击 cb-grip 复位默认位置
+    contents:
+      - btnPlay（暂停/播放 + SVG 图标）
+      - speed（模拟速度 range + output）
+      - btnViewDefault/btnViewEquator（视角）
+      - segFrame（光线固定/地轴固定 单选）
+      - btnResetAll（重置所有设置）
+  - id: svOptsCard
+    title: 太阳视运动设置
+    kind: card(sv)
+    dock: "fixed; left:16px×--ui; top:--dock-top（太阳侧主设置）"
+    size:
+      defaultW: "<PLACEHOLDER: 内容自适应>"
+      defaultH: "<PLACEHOLDER: 内容自适应>"
+      minW: 250
+      minH: 140
+      ar:
+        - 0.42
+        - 2.4
+    z_index: "<PLACEHOLDER: 卡片层（同主侧）>"
+    flags:
+      draggable: true
+      resizable: true
+      collapsible: true
+      closable: false
+    collapse: svBtnCollapse「收起」→ .collapsed
+    note: "太阳侧设置菜单（SUN_MENU）渲染于 #svOptMenu；结构与主侧 MENU 同一套 DSL"
+  - id: svTimeTop
+    title: 时间（太阳侧右上·北京时间）
+    kind: card(sv)
+    dock: "fixed; right:16px×--ui; top:--dock-top"
+    size:
+      defaultW: "<PLACEHOLDER: 内容自适应>"
+      defaultH: "<PLACEHOLDER: 内容自适应>"
+      minW: 260
+      minH: 130
+      ar:
+        - 0.46
+        - 2.6
+    z_index: "<PLACEHOLDER: 卡片层>"
+    flags:
+      draggable: true
+      resizable: true
+      collapsible: true
+      closable: false
+    collapse: svTtCollapse「折叠」→ .min
+  - id: svTimeBar
+    title: 观测点与时间控制（太阳侧下方·地方太阳时）
+    kind: card(sv)
+    dock: fixed; 贴底部（下方条）；横排/竖排可切换
+    size:
+      defaultW: "<PLACEHOLDER: 内容自适应（横排时较宽）>"
+      defaultH: "<PLACEHOLDER: 内容自适应>"
+      minW: 400
+      minH: 112
+      ar:
+        - 1.3
+        - 6
+    z_index: "<PLACEHOLDER: 卡片层>"
+    flags:
+      draggable: true
+      resizable: true
+      collapsible: true
+      closable: false
+    collapse: svTbCollapse「折叠」→ .collapsed
+    note: 含观测点定位（纬度/经度滑块+节点）与时间设置（地方太阳时宽轨滑块+日期滑块+速度）
+  - id: svMonitor
+    title: 观测点数据（太阳侧右上）
+    kind: card(sv)
+    dock: fixed; right（位于 svTimeTop 下方）
+    size:
+      defaultW: "<PLACEHOLDER: 内容自适应>"
+      defaultH: "<PLACEHOLDER: 内容自适应>"
+      minW: 236
+      minH: 118
+      ar:
+        - 0.55
+        - 2.4
+    z_index: "<PLACEHOLDER: 卡片层>"
+    flags:
+      draggable: true
+      resizable: true
+      collapsible: true
+      closable: false
+    collapse: svMonCollapse「折叠」→ .collapsed
+  - id: svWinEarth/svWinSky/svWinGround
+    title: 太阳侧 3D 悬浮窗（观测点位置/天球视图/地面全景）
+    kind: floating-window
+    dock: fixed; 默认右下区域（makeFloatPanel 计算，彼此错位避免重叠）
+    size:
+      defaultW: "<PLACEHOLDER: 内容自适应>"
+      defaultH: "<PLACEHOLDER: 内容自适应>"
+      minW: 188
+      minH: 166
+      ar:
+        - 0.72
+        - 1.7
+      note: win 类最小尺寸
+    z_index: "<PLACEHOLDER: 卡片层；拖动中 .pm-dragging → z60>"
+    flags:
+      draggable: true
+      resizable: true
+      collapsible: true
+      closable: true
+    collapse: sv-win-collapse「折叠」→ 隐藏 .card-body
+    close: "sv-win-close「关闭」→ 隐藏并置 S.panel.{earth,sky,ground}=false；重开经面板菜单"
+    canvas: "每个窗内含 <canvas>（svCvEarth/svCvSky/svCvGround）随窗口缩放填满"
+  - id: mvWinMap/mvWinOrbit/mvWinSide/mvWinSub/mvWinNorth/mvWinSouth
+    title: 地球运动侧 6 个 3D/2D 悬浮窗
+    kind: floating-window
+    dock: fixed; 默认散布（MV_DEFS 各自初值，互不重叠）
+    size:
+      map:
+        w: 300
+        h: 202
+        minW: 268
+        minH: 170
+        kind: 2d
+      orbit:
+        w: 262
+        h: 244
+        minW: 210
+        minH: 152
+        kind: 3d
+      side:
+        w: 262
+        h: 244
+        minW: 210
+        minH: 152
+        kind: 3d
+      sub:
+        w: 262
+        h: 244
+        minW: 210
+        minH: 152
+        kind: 3d
+      north:
+        w: 262
+        h: 244
+        minW: 210
+        minH: 152
+        kind: 3d
+      south:
+        w: 262
+        h: 244
+        minW: 210
+        minH: 152
+        kind: 3d
+    z_index: "容器 #mvWins z12；.mvwin.sv-active → z40；拖动中 .pm-dragging → z60"
+    flags:
+      draggable: true
+      resizable: true
+      collapsible: true
+      closable: true
+    collapse: mv-win-collapse「折叠」
+    close: mv-win-close「关闭」→ 隐藏；重开经「面板与悬浮窗」菜单
+    note: 每个窗内容与「综合视图」对应窗完全一致（同一渲染入口）
+  - id: comboUI/svComboUI
+    title: 综合视图多窗组合（地球运动侧 / 太阳侧）
+    kind: overlay-grid
+    dock: "fixed; inset:0（全屏覆盖）"
+    size:
+      fill: 自动铺满显示窗口（监听 resize/布局重排，不溢出不重叠）
+      cell: .cdiv 绝对定位 z7，内部可拖动/缩放
+    z_index: "容器 #comboUI z6；.cdiv z7；退出按钮 #svExitCombo z70 级"
+    flags:
+      draggable: true
+      resizable: true
+      collapsible: false
+      closable: true
+    close: svExitCombo「退出综合视图」
+    note: 综合视图的天球视图（太阳侧）直接复用太阳视运动的天球场景，不另建
+settingsMenu:
+  renderer: menu.js 的 renderInto/navEl 体系；同一套 DSL 同时驱动主侧 MENU 与太阳侧 SUN_MENU
+  dsl_schema:
+    group:
+      fields:
+        - id
+        - icon(emoji)
+        - name
+        - "sub(副标题, 仅一级)"
+        - sw(标题行开关 id)
+        - swPath(开关状态路径)
+        - swTip(悬停说明)
+        - gate(父级门控表达式)
+        - "children:[...]"
+      desc: 可嵌套；标题行可带总开关，子项受 gate 门控
+    separator: "sep() → <div class=\"section-sep\"> 横线分隔"
+    control_types:
+      toggle: "sw(id,name,path,gate) / 标题行 sw → 复选框（✓）"
+      range: "rg(id,name,path,min,max,step,out,map,fmt) → 滑块 + output 读数"
+      color: "cl(id,name,path,hex) → 颜色选择"
+      select: "sl(id,name,path,opts) → 下拉单选"
+      use: "use(id,name,o) → 引用已收割的控件（复用）"
+      tip: tip(text) → 帮助说明文本
+      raw: raw(html) → 自定义 HTML（如预设按钮行）
+      noteGrp: "noteGrp(name,cat,p,swId,gate) → 文字注释分组（组开关 + 子组）"
+    icon_area: 每行左侧 emoji 图标（icon 字段）；部分行无图标
+    shortcut_area: "<PLACEHOLDER: 源码未实现快捷键区（无 accelerator 字段）；如需复用请显式补充快捷键定义与提示文本位置>"
+    submenu_direction: 二级菜单在一级行下方容器内展开；三级+控制项在面板右侧浮层展开（flyHost）；三级标题点击后控制项向下展开
+  top_level_groups_MAIN:
+    - id: sLight
+      icon: ☀️
+      name: 光照系统
+      sub: 太阳光线 · 晨昏线 · 直射点 · 极昼极夜
+    - id: sSurface
+      icon: 🌫️
+      name: 地球表层
+      sub: 灯光 · 地轴 · 经纬线 · 温度带 · 时刻 · 时区 · 时差
+    - id: sOrbit
+      icon: 🛰️
+      name: 公转系统
+      sub: 示意比例 · 椭圆轨道 · 节气标记 · 公转速度 · 注释
+    - id: sPts
+      icon: 📌
+      name: 地球运动观测
+      sub: 观测点 · 标记点 · 小人模型 · 球面最短距离
+    - id: sNote
+      icon: 📝
+      name: 全局文字样式
+      sub: 注释总开关 · 样式统一设置 · 面板文字样式
+    - id: sUi
+      icon: 🎨
+      name: 界面与主题
+      sub: UI 色系 · 半透明毛玻璃 · 面板背景
+  top_level_groups_SUN:
+    - id: sSvLight
+      icon: ☀️
+      name: 太阳光线与光照
+      sub: 真实太阳 · 体积光 · 天空与霞光
+    - id: sSvPath
+      icon: 🌅
+      name: 太阳视运动
+      sub: 视运动轨迹 · 地面轨迹 · 光线与阴影
+    - id: sSvCoord
+      icon: 🧭
+      name: 天球坐标系
+      sub: 地平要素 · 赤道要素 · 固定模式 · 文字注释
+    - id: sSunObj
+      icon: 🏙️
+      name: 地面物体
+      sub: 方向标 · 建筑物 · 小人 · 树木旗杆 · 室内
+    - id: sSvMeas
+      icon: 📏
+      name: 观察与测量
+      sub: 数据面板 · 物影 · 第一人称方向标
+    - id: sSvNote
+      icon: 📝
+      name: 全局文字样式
+      sub: 显示全部注释 · 统一属性 · 面板文字样式
+    - id: sSvTheme
+      icon: 🎨
+      name: 界面与主题
+      sub: UI 风格 · 色系 · 面板毛玻璃
+  example_branch:
+    group: sLight › 光照与太阳光线(pLightRays)
+    master_switch: 标题行 sw=cbRays（显示太阳光线箭头）；swTip 悬停说明
+    children_example:
+      - "use(cbRaysCenter) 只显示直射光线（gate:rays）"
+      - "G(直射光线样式)[ lwCtl 线粗细 / cl 线颜色 / rg 透明度 / G(类型)[虚线密度,虚实比] ]（gate:rays）"
+      - "G(箭头样式)[ rg 点大小 / cl 点颜色 / rg 透明度 ]（gate:rays）"
+      - "G(光线密度)[ rg 光线数量 3–25 ]（gate:rays）"
+      - sep()
+      - "G(体积光柱)[ G(强度与外观)[...] ]（sw=cbVolShaft，独立开关）"
+      - sep()
+      - "G(太阳贴图)[ sw(cbSunTex) ]"
+      - sep()
+      - noteGrp(文字注释【太阳光线】)
+    note: 子项带 gate 时，父开关关闭 → 子项置灰并隐藏（disabled 态）
+  item_states:
+    hover: "CSS :hover → color:var(--accent)（蓝 #2563eb）；分组/行 hover 浅蓝底 rgba(37,99,235,.08)"
+    selected_on: 选中项 .on：accent 背景 + 白字；下拉/分段按钮 .on 显示 ✓
+    checkbox: 复选框（sw/toggle）：开=填充圆点 + 蓝；关=白底
+    radio: 单选（seg/select）：同 .on 表现，互斥
+    disabled: gate 未满足 → 置灰（--ink-faint）+ 隐藏或不可点
+    expanded: 分组展开 .open / 浮层显示；折叠态隐藏 children
+interactionLogic:
+  - target: "顶部模块/视图切换（#segView）"
+    trigger: 点击 .tbm2-lv1 → 切模块并显示对应 .tbm2-lv2grp(.on)；点击 .tbm2-lv2btn → 切视图
+    dropdown: 点击 .tbm2-more → 切换 .tbm2-drop(.open)；再次点击或点击外部/Esc 关闭
+    hover: ".tbm2-lv1:hover 变 accent；.tbm2-drop button:hover 浅蓝底"
+    select: 点击 drop 内选项 → 标记 .on（同组互斥，原 .on 移除）并写入对应状态
+    keyboard: "<PLACEHOLDER: 源码未见针对顶部栏的 keydown/方向键导航实现；如需复用请补充：←/→ 切换一级，↑/↓ 在 drop 内移动，Enter 选中，Esc 关闭>"
+  - target: "设置菜单（#optsCard / #svOptsCard）三级折叠"
+    documented_behavior: 一级行点击 → 二级菜单在下方容器展开；二级行点击 → 三级+控制项浮层在面板右侧展开（全局互斥）；三级标题点击 → 控制项向下展开
+    auto_collapse: 鼠标移出菜单范围 → 自动收起已展开的浮层（flyHost）
+    exclusivity: 二级浮层全局互斥：打开一个新的会关闭其它
+    hover_delay: "<PLACEHOLDER: 源码未设显式 hover 延迟（无 setTimeout 悬停定时器）；展开为 click 触发，非 hover 触发。如需 hover 展开请补充 delay 常量（建议 120–200ms）>"
+    gating: "子项 gate 表达式（如 note.master.on,rays）为假 → 子项 disabled（置灰+隐藏）"
+    keyboard: "<PLACEHOLDER: 设置菜单内部未见 keydown 导航实现；如需复用请补充方向键/Enter/Esc 与焦点环>"
+  - target: 浮动面板（拖拽 / 缩放 / 折叠 / 关闭）
+    drag: "pointerdown 于 .card-head（或抓手）→ 移动；clamp 范围：允许部分推出屏幕（app.js: clamp(x, 4 - w + 64, innerWidth - 64)；顶部受标题栏下沿限制）"
+    resize: "边缘把手 pointerdown/move/up；最小尺寸按 P 表 / MV_DEFS 强制；宽高比 ar[min,max] 超出时回拉"
+    collapse: header 链接按钮 → 切换 .collapsed/.min/.gi-min（隐藏 body）
+    close: floating-window 的 close 链接 → 隐藏 + 置面板状态 false；重开经「面板与悬浮窗」菜单
+    memory: "位置/尺寸写入布局状态（S.layout.*），重载后恢复"
+    focus_z: 拖动/缩放中类 .pm-dragging → z60，释放恢复
+  - target: 失焦关闭 / 外部点击
+    rule: "下拉（.tbm2-drop）、面板菜单浮层（#flyPanelMenu2）、二级浮层（flyHost）在点击其外部区域或 Esc 时关闭"
+    blur_close_delay: "<PLACEHOLDER: 外部点击即时关闭；源码未设关闭延迟/淡出定时器（如需可补 0ms 即时 / 150ms 淡出）>"
+  - target: 沉浸模式
+    enter: "btnImmersive / 或触发 → 加 body.immersive：隐藏 #titleBar 与所有 .card；仅留 #gl/#svCanvas"
+    exit: 右上 imm-exit 按钮 或 Esc → 退出沉浸
+notes_for_reuse:
+  - 所有像素尺寸应作为「设计基准值」存储，渲染时统一乘以 --ui（乘子），不要在各自组件内硬编码缩放。
+  - "圆角/内边距/字重/字号均通过 CSS 变量（--r/--pad-x/--ui-fw*/--ui-fs）统一控制，复用时应保留这套变量层。"
+  - 卡片头（.card-head）必须声明与自身水平内边距相等的 --pad-x，否则表头负 margin 抵消量为 0，左右各留 1px 缝隙（验收基准差 1px 非 0）。
+  - "占位符（<PLACEHOLDER: ...>）为源码中未固化或需作者确认的数值，复用时请先实测或向作者确认后再落地。"
