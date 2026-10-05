@@ -1,0 +1,1959 @@
+:root {
+  --ink: #1e293b;
+  --ink-dim: #64748b;
+  --ink-faint: #94a3b8;
+  --line: rgba(15, 23, 42, 0.10);
+  --panel: rgba(var(--panel-rgb, 255, 255, 255), var(--glass-a, 0.88));
+  --panel-rgb: 255, 255, 255;
+  --glass-a: 0.88;
+  /* v32（需求三）：由「面板背景不透明度」派生 —— 卡头 / 浮层 / 控件三档（JS 里按 base 同步写入） */
+  --glass-head: 0.97;
+  --glass-fly: 0.92;
+  --glass-ctl: 0.83;
+  --glass-blur: 14px;
+  --accent-2: #22d3ee;
+  --panel-solid: #ffffff;
+  --accent: #2563eb;
+  --accent-soft: rgba(37, 99, 235, 0.12);
+  --warn: #dc2626;
+  --shadow: 0 12px 32px rgba(2, 6, 23, 0.30), 0 2px 6px rgba(2, 6, 23, 0.18);
+  /* 界面自适应：--uiW 由屏幕宽度决定，--uiH 由屏幕高度决定，乘积即统一缩放系数 --ui。
+     所有界面尺寸都乘以 --ui，于是整体随屏幕等比缩放，小屏不挤、大屏不空旷。 */
+  --uiW: 1;
+  --uiH: 1;
+  --ui: calc(var(--uiW) * var(--uiH));
+  --r: calc(14px * var(--ui));
+  /* ★ v40（需求六）：总菜单改为两行 → 标题栏加高以容纳（一级 26px + 二级 24px + 间隙） */
+  --tb-h: calc(78px * var(--ui));
+  /* ★ v43（需求二·1）：**总菜单栏所有要素统一高度**。
+     此前一级 26px / 二级 24px / ▾ 24px / 沉浸 30px / 面板与悬浮窗 26~31px（继承 .btn）
+     五档参差，探针实测极差 7px，视觉上就是「有的高有的矮的一排按钮」。
+     统一到 30px 一档：层级差异改由**填充深浅 / 边框 / 字重**表达，不再靠盒高。 */
+  --tbm-h: calc(30px * var(--ui));
+  /* 卡片表头统一规格（v3.6）：所有浮窗表头共用同一套高度 / 内边距 / 主题标记 */
+  --head-h: calc(38px * var(--ui));
+  --hy: calc(9px * var(--ui));
+  /* ★ v44（需求一）：**全站面板标题统一内缩** —— 此前各面板各写一份（10 / 14 / 16px），
+     于是「设置面板 / 时间面板 / 悬浮窗 / 二级菜单浮层」左上角的标题竖条与文字参差不齐。
+     现在只留这一个值（表头 padding-left），各面板只声明用于出血的 --pad-x，标题一律对齐。 */
+  --hx: calc(14px * var(--ui));
+  --accent-bar: linear-gradient(180deg, var(--accent), var(--accent-2));
+  /* 面板文字样式（v14.0）：--ui-font 字体 / --ui-fs 字号倍率 由 JS 写入；
+     --ink / --ink-dim / --ink-faint 三个文字色变量同样由 JS 覆写（含透明度）。
+     v21.0：面板文字「字重」真正生效 ——
+       --ui-fw   基准字重（正文）
+       --ui-fw-m 中粗（原先把标题 / 分组名写死的 600）
+       --ui-fw-b 加粗（原先写死的 700 / 800）
+     三者都由「面板文字样式 › 字重」按所选等级推算写入，因此面板里从正文到标题会
+     整体跟着变粗 / 变细，而不只是正文那一行。 */
+  --ui-fs: 1;
+  --ui-fw: 400;
+  --ui-fw-m: 600;
+  --ui-fw-b: 700;
+  /* 浮窗停靠高度：由 JS 依视图实测写入（三窗/综合视图需下移到窗格标题条之下）。
+     这里给纯 CSS 兜底值，保证脚本未执行时浮窗也不会压住标题条。 */
+  --dock-top: calc(var(--tb-h) + 12px * var(--ui));
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0; padding: 0; height: 100%; overflow: hidden;
+  background: #05070d;
+  color: var(--ink);
+  font-family: var(--ui-font, "PingFang SC", "Microsoft YaHei", "Segoe UI", system-ui, -apple-system, sans-serif);
+  font-size: calc(13px * var(--ui) * var(--ui-fs));
+  /* v21.0：面板文字基准字重（标题 / 分组名的中粗与加粗由 --ui-fw-m / --ui-fw-b 承担） */
+  font-weight: var(--ui-fw, 400);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ★ 本次可访问性修复：键盘聚焦可见 —— 统一焦点环（鼠标点击不显示，仅键盘 / Tab 导航时出现） */
+:focus-visible { outline: 2px solid #7cc4ff; outline-offset: 2px; }
+
+#gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+#gl.grabbing { cursor: grabbing; }
+
+/* ---------- 视窗框 ---------- */
+#panes { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+.pane {
+  position: absolute; display: none; flex-direction: column; gap: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0));
+}
+.pane.on { display: flex; }
+.pane > span { position: absolute; }
+/* 窗格表头：与综合视图子窗口表头（.ccell-h）同款 */
+.pane .pane-h {
+  height: 30px; display: flex; align-items: center; padding: 0 10px; flex: none;
+  background: linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,.05));
+  border-bottom: 1px solid rgba(255,255,255,.12);
+  border-radius: 11px 11px 0 0; user-select: none;
+}
+.pane .pane-h span {
+  position: relative; padding-left: 9px;
+  font-size: calc(15px * var(--ui-fs)); font-weight: var(--ui-fw-m, 600); color: #eaf2ff;
+  letter-spacing: .4px;
+}
+/* 统一的表头语言：左侧一小段主题色竖条（浅色卡片与深色窗格共用） */
+.pane .pane-h span::before, #comboUI .ccell-h span::before {
+  content: ""; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+  width: 2.5px; height: 12px; border-radius: 999px;
+  background: linear-gradient(180deg, #60a5fa, #22d3ee);
+}
+/* 提示文字：与标题同处一行（不再单独占一行，浮窗可以紧贴表头下方停靠） */
+.pane .p-hint {
+  margin-left: 10px; font-size: calc(11px * var(--ui-fs)); font-style: normal; font-weight: var(--ui-fw, 400);
+  color: rgba(226, 240, 255, 0.62); letter-spacing: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+
+/* ---------- 可拖动分隔条 ---------- */
+.splitter { position: fixed; z-index: 11; display: none; }
+.splitter.on { display: block; }
+.splitter i {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  border-radius: 999px; background: rgba(37, 99, 235, .45);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, .12); transition: background .15s ease;
+}
+.splitter.vert { cursor: col-resize; width: 10px; }
+.splitter.vert i { width: 4px; height: 46px; }
+.splitter.horz { cursor: row-resize; height: 10px; }
+.splitter.horz i { height: 4px; width: 46px; }
+.splitter:hover i, .splitter.drag i { background: rgba(37, 99, 235, .9); box-shadow: 0 0 0 4px rgba(37, 99, 235, .18); }
+body.resizing { user-select: none; cursor: grabbing; }
+
+/* ---------- 面板通用 ---------- */
+.card {
+  position: fixed; z-index: 10;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--r);
+  box-shadow: var(--shadow); backdrop-filter: blur(var(--glass-blur, 14px)) saturate(1.25);
+  -webkit-backdrop-filter: blur(var(--glass-blur, 14px)) saturate(1.25);
+}
+/* ★ v62（需求 1）：此处原有 `#optsCard.collapsed .card-body { display: none; }` 已删除 ——
+   它在挂上 collapsed 的**那一帧**就把正文抽掉，收起动画直接断掉（展开时正文又是硬弹出来），
+   正是用户反馈的「展开过渡动画不自然」。与太阳侧（#svOptsCard）同一口径：
+   正文的隐藏交由 JS（__panelFit.setFolded）在**动画结束之后**做。 */
+
+/* ---------- 卡片表头（v3.6 统一规格） ----------
+   1) 满宽出血：用负外边距抵消卡片自身的内边距，表头横贯整张卡片，
+      不再出现“白色表头浮在卡片里、右侧留一条缝”的观感；
+   2) 顶部圆角跟随卡片内圆角，避免表头方角戳出卡片圆角；
+   3) 统一构成：左侧主题色竖条 + 图标 + 标题 + 摘要胶囊 + 右侧折叠胶囊按钮。 */
+.card > .card-head {
+  position: relative; z-index: 2; flex: none;
+  display: flex; align-items: center; gap: calc(9px * var(--ui));
+  min-height: var(--head-h);
+  margin: 0 calc(-1 * var(--pad-x, 0px)) 0;
+  padding: var(--hy) var(--hx);
+  border-radius: calc(var(--r) - 1px) calc(var(--r) - 1px) 0 0;
+  background:
+    radial-gradient(140% 190% at 0% 0%, rgba(37, 99, 235, .14), rgba(37, 99, 235, 0) 60%),
+    linear-gradient(180deg, rgba(var(--panel-rgb, 255, 255, 255), var(--glass-head, 0.97)),
+                            rgba(var(--panel-rgb, 255, 255, 255), var(--glass-head, 0.97)));
+  border-bottom: 1px solid rgba(15, 23, 42, .09);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .95);
+  cursor: grab; user-select: none;
+}
+.card-head h2 {
+  position: relative; margin: 0; padding-left: calc(11px * var(--ui));
+  display: inline-flex; align-items: center; gap: calc(5px * var(--ui));
+  font-size: calc(13px * var(--ui) * var(--ui-fs)); font-weight: var(--ui-fw-b, 700); letter-spacing: .3px;
+  color: var(--ink); line-height: 1.25; white-space: nowrap;
+}
+.card-head h2::before {
+  content: ""; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+  width: calc(3px * var(--ui)); height: calc(15px * var(--ui)); border-radius: 999px;
+  background: var(--accent-bar);
+  box-shadow: 0 0 0 calc(2.5px * var(--ui)) rgba(37, 99, 235, .10);
+}
+.hd-ico { font-style: normal; font-size: calc(13px * var(--ui) * var(--ui-fs)); line-height: 1; }
+/* 表头摘要（时间 / 观测点）：主题色浅胶囊，替代原来的灰色小字 */
+.card-head > output {
+  flex: 0 1 auto; min-width: 0;
+  padding: calc(2px * var(--ui)) calc(9px * var(--ui));
+  border: 1px solid rgba(37, 99, 235, .16); border-radius: 999px;
+  background: rgba(37, 99, 235, .08); color: #1d4ed8;
+  font-size: calc(11px * var(--ui) * var(--ui-fs)); font-weight: var(--ui-fw-m, 600);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+/* 折叠 / 展开：胶囊按钮 + 状态箭头（展开态朝上、折叠态朝下） */
+.card-head .link {
+  flex: none; margin-left: auto;
+  display: inline-flex; align-items: center; gap: calc(5px * var(--ui));
+  padding: calc(3px * var(--ui)) calc(10px * var(--ui));
+  border: 1px solid rgba(37, 99, 235, .22); border-radius: 999px;
+  background: rgba(37, 99, 235, .07); color: #1d4ed8;
+  font-size: calc(11.5px * var(--ui) * var(--ui-fs)); font-weight: var(--ui-fw-m, 600); line-height: 1.3;
+  transition: background .15s ease, border-color .15s ease, transform .12s ease;
+}
+.card-head .link::before {
+  content: ""; width: calc(5.5px * var(--ui)); height: calc(5.5px * var(--ui));
+  border-right: calc(1.8px * var(--ui)) solid currentColor;
+  border-bottom: calc(1.8px * var(--ui)) solid currentColor;
+  transform: rotate(-135deg) translate(-1px, -1px); transition: transform .18s ease;
+}
+.card-head .link:hover { background: rgba(37, 99, 235, .16); border-color: rgba(37, 99, 235, .38); }
+.card-head .link:active { transform: translateY(1px); }
+/* ★ v61（需求5）：这条旧「箭头朝下」规则只作用于**文字胶囊按钮**；
+   带 data-ic 的折叠 / 关闭图标按钮由下方 v59 图标块 + v61 折叠态规则接管，
+   否则这里的 rotate（id 选择器特异性更高）会盖掉「一横线 / × / V」。 */
+#optsCard.collapsed .card-head .link:not([data-ic])::before,
+#timeCard.min .card-head .link:not([data-ic])::before,
+#geoInfo.gi-min .card-head .link:not([data-ic])::before { transform: rotate(45deg) translate(-2px, -2px); }
+
+/* ---------- 点标注列表 ---------- */
+.pt-list { display: flex; flex-direction: column; gap: 3px; max-height: 168px; overflow-y: auto; }
+.pt-row { display: flex; align-items: center; gap: 7px; padding: 3px 6px; border-radius: 7px; background: rgba(122,162,255,0.07); }
+.pt-dot { flex: none; width: 9px; height: 9px; border-radius: 50%; box-shadow: 0 0 5px rgba(255,176,32,0.55); }
+.pt-txt { flex: 1; font-size: calc(11.5px * var(--ui-fs)); color: var(--ink); white-space: nowrap; }
+.pt-del { flex: none; }
+.pt-empty { font-size: calc(11px * var(--ui-fs)); color: var(--ink-dim); padding: 2px 0; }
+
+/* ---------- 顶部标题栏（v3.6：沉浸式横贯窗口顶端） ---------- */
+#titleBar {
+  position: fixed; top: 0; left: 0; right: 0; height: var(--tb-h); z-index: 15;
+  display: flex; align-items: center; gap: 13px; padding: 0 20px;
+  background:
+    radial-gradient(140% 260% at 6% -60%, rgba(37, 99, 235, .26), rgba(37, 99, 235, 0) 62%),
+    linear-gradient(90deg, rgba(255, 255, 255, .95) 0%, rgba(241, 246, 255, .92) 46%, rgba(255, 255, 255, .95) 100%);
+  border-bottom: 1px solid rgba(15, 23, 42, .08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .85), 0 6px 20px rgba(2, 6, 23, .22);
+  backdrop-filter: blur(18px) saturate(1.45);
+  -webkit-backdrop-filter: blur(18px) saturate(1.45);
+  user-select: none;
+}
+/* 顶部高光：让标题栏“贴住”窗口最上沿 */
+#titleBar::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1px; pointer-events: none;
+  background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,.95) 20%, rgba(255,255,255,.95) 80%, rgba(255,255,255,0));
+}
+/* 底端主题渐变线：标题栏与场景之间的“沉浸”过渡 */
+#titleBar::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; opacity: .8; pointer-events: none;
+  background: linear-gradient(90deg, rgba(37,99,235,0) 0%, rgba(37,99,235,.62) 16%, rgba(34,211,238,.68) 58%, rgba(37,99,235,0) 100%);
+}
+/* v20.0：左侧徽标由「自转」文字改为地球图片（内联 SVG，无外部资源依赖）。
+   圆形底盘 + 主题色外发光；发光颜色随当前视图变化（自转=蓝 / 公转=琥珀 / 综合=紫），
+   由 JS 写入 data-view 属性驱动，标题栏一眼可辨当前处于哪种视图。 */
+.title-badge {
+  width: 38px; height: 38px; flex: none; border-radius: 50%; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 34% 28%, #16324f, #0b1d33 78%);
+  box-shadow: 0 4px 14px rgba(37, 99, 235, .38), inset 0 0 0 1px rgba(255, 255, 255, .18);
+  transition: box-shadow .22s ease;
+}
+.title-badge svg { width: 100%; height: 100%; display: block; }
+.title-badge[data-view="revolve"] { box-shadow: 0 4px 14px rgba(245, 158, 11, .46), inset 0 0 0 1px rgba(255, 255, 255, .22); }
+.title-badge[data-view="combo"]   { box-shadow: 0 4px 14px rgba(139, 92, 246, .46), inset 0 0 0 1px rgba(255, 255, 255, .22); }
+/* 标题与制作者徽标同处一行（v20.0 删除标题下的小字副标题）。
+   .tb-text 允许收缩（min-width:0）——窄屏下标题可换行，不会撑破标题栏。 */
+.tb-text { min-width: 0; }
+.tb-text h1 { margin: 0; font-size: calc(14px * var(--ui-fs)); font-weight: var(--ui-fw-m, 600); letter-spacing: .3px; white-space: nowrap; display: flex; align-items: baseline; gap: calc(4px * var(--ui)); }
+/* ★ v40（需求七）：标题「地理3D实验室——地球运动&太阳视运动」
+   主名「地理3D实验室」放大 + 主题渐变；破折号与副名保持较小字号。 */
+.tb-text h1 .tb-brand {
+  font-size: calc(23px * var(--ui-fs)); font-weight: var(--ui-fw-b, 800); letter-spacing: .5px;
+  background: linear-gradient(120deg, #1d4ed8 0%, #2563eb 42%, #0ea5e9 78%, #06b6d4 100%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: #2563eb;
+}
+.tb-text h1 .tb-dash { font-size: calc(15px * var(--ui-fs)); color: #64748b; font-weight: 500; }
+.tb-text h1 .tb-sub { font-size: calc(14.5px * var(--ui-fs)); font-weight: var(--ui-fw-m, 600); color: #334155; }
+/* 单窗 / 三窗：只在“自转演示”视图显示（其余视图无此概念） */
+#segMode { display: none; }
+body[data-view="rotate"] #segMode { display: flex; }
+/* v23.17：公转镜头（全局视角 / 地球特写）——只在“公转动画”视图显示（与单窗/三窗同款分布） */
+#segOrbCam { display: none; }
+body[data-view="revolve"] #segOrbCam { display: flex; }
+/* v23.18（需求④）：综合视图的「一致 / 简洁」模式按钮 —— 仅综合视图显示 */
+#segComboMode { display: none; }
+body[data-view="combo"] #segComboMode { display: flex; }
+/* v27.0（需求三.2）：自转「三窗」的一致 / 简洁模式与综合视角共用同一开关 ——
+   自转视图 + 三窗时同样显示（模式值直接跟随综合视角的 state.comboMode） */
+body[data-view="rotate"][data-rmode="triple"] #segComboMode { display: flex; }
+
+/* ---------- 时间面板 ---------- */
+/* ★ v40（需求四）：时间面板**自动拉伸以完整显示全部内容**，禁止折叠 / 裁剪。
+   原先用 max-height + overflow-y:auto → 内容超高就被裁掉、出现内部滚动条；
+   用户希望「完整显示、禁止折叠」。改为：
+   · 高度由内容自然撑开（height:auto，去掉 max-height）；
+   · 若展开后确实超出视口高度，则整体等比缩小（由 JS 依可用高度写入 --timecard-fit），
+     仍然完整显示，绝不裁剪。 */
+#timeCard {
+  right: 16px; top: var(--dock-top); width: 336px; padding: 0 16px 12px;
+  display: flex; flex-direction: column; gap: 10px; transition: opacity .2s ease;
+  height: auto; max-height: none; overflow: visible;
+  touch-action: pan-y; overscroll-behavior: contain;
+  --pad-x: calc(16px * var(--ui));
+  /* --timecard-fit：内容超高时由 JS 写入的缩放补偿（1 = 不需缩放） */
+  zoom: var(--timecard-fit, 1);
+}
+#timeCard.fade { opacity: .28; }
+/* 折叠态：只留标题行。宽度 auto → 收缩到内容（图标+标题+摘要胶囊+按钮）实际所需宽度，
+   既不截断摘要，也不留多余空白（内容自适应排版） */
+#timeCard.min { width: auto; }
+#timeCard.min .t-block, #timeCard.min .terms,
+#timeCard.min .term-note, #timeCard.min .sb, #timeCard.min .facts { display: none; }
+/* 浮窗拖拽 */
+.card.grabbing { cursor: grabbing; box-shadow: 0 10px 34px rgba(15, 23, 42, .22); }
+.card.grabbing .card-head { cursor: grabbing; }
+#timeCard.grabbing { opacity: 1 !important; }
+.t-main { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+/* ★ v35（需求十六）：右上时间窗时钟旁的「北京时间」小标注 */
+.t-tag { font-style: normal; font-size: calc(10px * var(--ui-fs)); color: var(--ink-dim);
+  border: 1px solid var(--line); border-radius: 6px; padding: 1px 5px; white-space: nowrap; flex: none; }
+#tDate { font-size: calc(15px * var(--ui-fs)); font-weight: var(--ui-fw-b, 700); }
+#tClock { font-size: calc(26px * var(--ui-fs)); font-weight: var(--ui-fw-b, 700); letter-spacing: 1px; font-variant-numeric: tabular-nums; line-height: 1.1; color: var(--ink); }
+.t-sub { display: flex; justify-content: space-between; align-items: center; font-size: calc(11px * var(--ui-fs)); color: var(--ink-dim); }
+.link {
+  border: 0; background: none; color: var(--accent); font-size: calc(11.5px * var(--ui-fs)); cursor: pointer; padding: 2px 4px; border-radius: 6px;
+  font-family: inherit;
+}
+.link:hover { background: var(--accent-soft); }
+
+.terms { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.term {
+  border: 1px solid var(--line); background: rgba(255, 255, 255, .7); border-radius: 9px; padding: 5px 2px; cursor: pointer;
+  text-align: center; font-family: inherit; transition: .15s;
+}
+.term .n { display: block; font-size: calc(12px * var(--ui-fs)); font-weight: var(--ui-fw-m, 600); color: var(--ink); }
+.term .d { display: block; font-size: calc(10px * var(--ui-fs)); color: var(--ink-faint); margin-top: 1px; font-variant-numeric: tabular-nums; }
+.term:hover { border-color: rgba(37, 99, 235, .45); background: rgba(var(--panel-rgb, 255, 255, 255), var(--glass-ctl, 0.83)); }
+.term.active { background: var(--accent); border-color: var(--accent); }
+.term.active .n, .term.active .d { color: #fff; }
+.term-note { font-size: calc(11px * var(--ui-fs)); color: var(--ink-dim); margin-top: -2px; }
+
+.sb { display: flex; flex-direction: column; gap: 3px; }
+.sb-head { display: flex; justify-content: space-between; align-items: baseline; font-size: calc(11.5px * var(--ui-fs)); }
+.sb-head label { color: var(--ink-dim); }
+.sb-head .dim { color: var(--ink-faint); }
+.sb-head output { font-weight: var(--ui-fw-b, 700); font-size: calc(12.5px * var(--ui-fs)); font-variant-numeric: tabular-nums; }
+
+.ticks { position: relative; height: 24px; margin-top: -1px; }
+.ticks .tk { position: absolute; transform: translateX(-50%); font-size: calc(9.5px * var(--ui-fs)); color: var(--ink-faint); top: 0; white-space: nowrap; }
+.ticks .tk::before {
+  content: ""; position: absolute; left: 50%; top: -5px; width: 1px; height: 3px; background: rgba(100, 116, 139, .5);
+}
+.ticks .tk.t2 { top: 11px; }
+.ticks .tk.t2::before { top: -4px; height: 3px; }
+.ticks .tk.key { color: var(--accent); font-weight: var(--ui-fw-b, 700); font-size: calc(10.5px * var(--ui-fs)); }
+.ticks .tk.key::before { background: var(--accent); height: 4px; width: 1.5px; }
+
+.facts { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 8px; border-top: 1px dashed var(--line); padding-top: 9px; }
+.facts div { text-align: center; min-width: 0; }
+.facts .fact-wide { grid-column: 1 / -1; }
+.facts b { display: block; font-size: calc(13px * var(--ui-fs)); font-variant-numeric: tabular-nums; color: var(--ink); }
+.facts i { display: block; font-style: normal; font-size: calc(10px * var(--ui-fs)); color: var(--ink-faint); margin-top: 1px; }
+
+/* ---------- 显示设置 ---------- */
+/* v3.6：滚动从卡片移到 .card-body，表头独立于滚动区 —— 表头不再被内容“穿透”，
+   右侧也不会再被滚动条挤出一条缝。 */
+#optsCard {
+  left: 16px; top: var(--dock-top); width: 292px;
+  /* --cap（JS 写入）＝ 下方窗格标题文字的上沿，保证铺满全窗时标题不被压住
+     （同样先写 calc() 兜底、再写 min() 版本） */
+  max-height: calc(100vh - var(--tb-h) - 130px);
+  max-height: min(var(--cap, 100vh), calc(100vh - var(--tb-h) - 130px));
+  display: flex; flex-direction: column; overflow: hidden; padding: 0;
+  --pad-x: 0px;
+}
+#optsCard .card-body {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  /* 触摸设备上允许纵向原生滚动（此前被浮窗拖动逻辑劫持 → 无法滑动） */
+  touch-action: pan-y; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  padding: calc(8px * var(--ui)) calc(14px * var(--ui)) calc(12px * var(--ui));
+  display: flex; flex-direction: column; gap: calc(4px * var(--ui));
+}
+/* 仅在虚线模式下可用的行（实线时置灰并禁用） */
+.row.locked { opacity: .42; }
+.row.locked input { pointer-events: none; }
+.row select {
+  flex: 1; border: 1px solid var(--line); border-radius: 7px; padding: 3px 6px; font-family: inherit; font-size: calc(11.5px * var(--ui-fs));
+  background: rgba(var(--panel-rgb, 255, 255, 255), var(--glass-ctl, 0.83)); color: var(--ink);
+}
+.row input[type=color] {
+  width: 30px; height: 22px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; cursor: pointer;
+}
+.clr-hex { font-size: calc(10.5px * var(--ui-fs)); color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+
+.btn-row { display: flex; align-items: center; gap: 8px; padding: 4px 0 0; flex-wrap: wrap; }
+.dim { font-size: calc(10.5px * var(--ui-fs)); color: var(--ink-faint); }
+
+/* 开关 */
+.sw { display: flex; align-items: center; gap: 9px; padding: 4px 0; cursor: pointer; user-select: none; }
+.sw input { display: none; }
+.sw .track {
+  width: 32px; height: 18px; border-radius: 10px; background: rgba(100, 116, 139, .32); position: relative; flex: none;
+  transition: background .18s;
+}
+.sw .track::after {
+  content: ""; position: absolute; width: 14px; height: 14px; border-radius: 50%; background: #fff; top: 2px; left: 2px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.28); transition: transform .18s;
+}
+.sw input:checked + .track { background: var(--accent); }
+.sw input:checked + .track::after { transform: translateX(14px); }
+.sw-label { font-size: calc(12px * var(--ui-fs)); }
+
+/* 滑块 */
+input[type=range] {
+  -webkit-appearance: none; appearance: none; height: 18px; background: transparent; cursor: pointer;
+}
+input[type=range]::-webkit-slider-runnable-track {
+  height: 4px; border-radius: 2px; background: linear-gradient(90deg, rgba(37,99,235,.55), rgba(37,99,235,.18));
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #fff; margin-top: -5px;
+  border: 2px solid var(--accent); box-shadow: 0 1px 4px rgba(2,6,23,.25);
+}
+input[type=range]::-moz-range-track { height: 4px; border-radius: 2px; background: rgba(37,99,235,.4); }
+input[type=range]::-moz-range-thumb {
+  width: 12px; height: 12px; border-radius: 50%; background: #fff; border: 2px solid var(--accent);
+}
+
+/* ---------- 底部控制条 ---------- */
+#controlBar {
+  position: fixed; z-index: 12; left: 50%; bottom: 14px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 12px; row-gap: 8px; padding: 10px 16px; border-radius: 16px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow);
+  backdrop-filter: blur(14px) saturate(1.25); -webkit-backdrop-filter: blur(14px) saturate(1.25);
+  max-width: calc(100vw - 32px); flex-wrap: wrap; justify-content: center;
+}
+/* 折叠按钮：位于控制条窗口内右上角 */
+.cb-toggle {
+  position: absolute; top: 5px; right: 8px;
+  border: 1px solid var(--line); background: rgba(255, 255, 255, .65); color: var(--ink-faint);
+  border-radius: 999px; padding: 1px 9px; font-size: calc(10.5px * var(--ui-fs)); font-family: inherit; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 4px;
+  transition: color .15s, border-color .15s; white-space: nowrap; flex: none;
+}
+.cb-toggle:hover { color: #1d4ed8; border-color: rgba(37, 99, 235, .45); }
+.cb-toggle .arr { display: inline-block; transition: transform .25s; font-size: calc(9px * var(--ui-fs)); line-height: 1; }
+#controlBar.min { padding: 6px 12px; }
+#controlBar.min .cb-group, #controlBar.min .cb-sep { display: none; }
+#controlBar.min .cb-toggle { position: static; }
+#controlBar.min .cb-toggle .arr { transform: rotate(180deg); }
+.cb-group { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
+/* v32（需求十一）：控制条抓手 —— 按住可把整条速度/控制面板拖到任意位置，双击复位 */
+.cb-grip {
+  cursor: move; user-select: none; flex: none; line-height: 1;
+  font-size: calc(15px * var(--ui) * var(--ui-fs)); color: var(--ink-faint);
+  padding: 0 calc(2px * var(--ui)); letter-spacing: calc(-2px * var(--ui));
+  transition: color .15s;
+}
+.cb-grip:hover, #controlBar.grabbing .cb-grip { color: #1d4ed8; }
+#controlBar.grabbing { cursor: grabbing; user-select: none; }
+.cb-sep { width: 1px; height: 26px; background: var(--line); flex: none; }
+.cb-cap { font-size: calc(11.5px * var(--ui-fs)); color: var(--ink-faint); flex: none; letter-spacing: .5px; }
+.btn {
+  border: 1px solid var(--line); background: rgba(var(--panel-rgb, 255, 255, 255), var(--glass-ctl, 0.83)); color: var(--ink); border-radius: 9px; padding: 6px 13px;
+  font-size: calc(12.5px * var(--ui-fs)); font-family: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;
+  height: 31px; transition: .15s; white-space: nowrap;
+}
+.btn:hover { border-color: rgba(37,99,235,.5); color: var(--accent); transform: translateY(-1px); }
+.btn:active { transform: translateY(0); }
+.btn.xs { height: 27px; padding: 4px 10px; font-size: calc(12px * var(--ui-fs)); }
+.btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.unit { font-size: calc(11px * var(--ui-fs)); color: var(--ink-dim); min-width: 22px; }
+.btn.play { background: var(--accent); border-color: var(--accent); color: #fff; min-width: 88px; justify-content: center; }
+.btn.play:hover { background: #1d4ed8; color: #fff; }
+.btn.warn { color: var(--warn); }
+.btn.warn:hover { border-color: rgba(220,38,38,.5); background: rgba(220,38,38,.06); color: var(--warn); }
+.speed { display: flex; align-items: center; gap: 8px; }
+.speed label { font-size: calc(11.5px * var(--ui-fs)); color: var(--ink-dim); white-space: nowrap; }
+.speed input[type=range] { width: 110px; }
+.speed output { font-size: calc(11.5px * var(--ui-fs)); min-width: 124px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.seg { display: flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; background: rgba(var(--panel-rgb, 255, 255, 255), var(--glass-ctl, 0.83)); flex: none; }
+.seg button {
+  border: 0; background: none; padding: 6px 14px; height: 29px; font-size: calc(12.5px * var(--ui-fs)); font-family: inherit;
+  cursor: pointer; color: var(--ink-dim); white-space: nowrap; transition: .15s;
+}
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button:hover { color: var(--accent); background: rgba(37, 99, 235, .06); }
+.seg button.on { background: var(--accent); color: #fff; }
+.grp-tip { margin: 8px 0 0; font-size: calc(10.5px * var(--ui-fs)); line-height: 1.6; color: var(--ink-dim); }
+
+/* ---------- loading ---------- */
+#loading {
+  position: fixed; z-index: 30; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  padding: 10px 18px; border-radius: 12px; background: rgba(15,23,42,.82); color: #e2e8f0; font-size: calc(13px * var(--ui-fs));
+  letter-spacing: .5px; transition: opacity .4s; pointer-events: none;
+}
+#loading.hide { opacity: 0; }
+
+/* 滚动条（滚动区已移至 .card-body，表头不再被滚动条挤窄） */
+#optsCard .card-body::-webkit-scrollbar { width: 10px; }
+#optsCard .card-body::-webkit-scrollbar-thumb { background: rgba(100,116,139,.45); border-radius: 5px; }
+#optsCard .card-body::-webkit-scrollbar-track { background: transparent; }
+#optsCard .card-body { scrollbar-width: thin; scrollbar-color: rgba(100,116,139,.4) transparent; }
+
+/* ---------- 标题栏视图切换 ---------- */
+#titleBar .title-views { margin-left: auto; }
+#titleBar .seg { height: 30px; }
+#titleBar .seg button { height: 28px; padding: 0 14px; font-size: calc(12px * var(--ui-fs)); }
+
+/* ---------- ★ v41（需求三.1）：右上角总菜单（一行：模块 + 视图并排） ---------- */
+.tbm2 {
+  display: flex; flex-direction: row; gap: calc(6px * var(--ui));
+  align-items: center; margin-left: auto; flex-wrap: wrap;
+}
+.tbm2-row { display: flex; gap: calc(6px * var(--ui)); align-items: center; flex-wrap: wrap; }
+/* ★ 本批次（需求五）：「地球运动 / 太阳视运动」两个模式按钮**绝对居中于标题栏** ——
+   #titleBar 是 position:fixed，故天然是本元素的包含块，left:50% 即视口正中，
+   不再被左侧标题块 / 右侧按钮的宽度挤偏。二级视图按钮组已搬到「沉浸模式」左侧（.tbm2-lv2host）。 */
+.tbm2-modes {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  display: inline-flex; align-items: center; gap: calc(6px * var(--ui)); z-index: 1;
+}
+/* ★ 本批次（需求二）：二级视图菜单容器 ——
+   整体搬到「沉浸模式」按钮左侧紧邻放置。#titleBar 是 flex 容器，
+   本元素用 margin-left:auto 吃掉剩余空间，把二级组顶到右侧；
+   再用左侧层级竖条 + 内嵌托盘底色，把「二级」与「一级」在视觉上分层。 */
+.tbm2-lv2host {
+  display: flex; align-items: center; flex: none;
+  /* margin-left:auto 吃掉剩余空间把二级组顶到右侧；右边不再加额外外边距，
+     与「沉浸模式」之间只保留 #titleBar 自身的 gap（13px），即视觉上的紧邻。 */
+  margin-left: auto; margin-right: 0;
+  padding: calc(2px * var(--ui)) calc(3px * var(--ui));
+  gap: calc(2px * var(--ui));
+  /* 左侧层级竖条：把「二级」与右邻的一级 / 功能按钮在视觉上分层 */
+  border-left: 2px solid var(--line);
+  border-radius: calc(10px * var(--ui));
+  background: rgba(var(--panel-rgb, 255, 255, 255), calc(var(--glass-ctl, .83) * .55));
+}
+@media (max-width: 1180px) {
+  /* 窄屏放不下居中模式按钮 + 二级组，回退为常规流内排布 */
+  .tbm2-modes { position: static; transform: none; }
+  .tbm2-lv2host { margin-left: auto; margin-right: 0; }
+}
+@media (max-width: 980px) {
+  /* 更窄时二级组允许换行，避免把一级按钮挤出标题栏 */
+  #titleBar { flex-wrap: wrap; height: auto; min-height: var(--tb-h); padding-bottom: 4px; }
+  .tbm2-lv2host { flex-wrap: wrap; }
+}
+.tbm2-sep {
+  width: 1px; height: calc(20px * var(--ui)); flex: none;
+  background: var(--line); margin: 0 calc(2px * var(--ui));
+}
+/* 一级按钮（地球运动 / 太阳视运动）—— v43：盒高统一 var(--tbm-h)，
+   层次靠「实心主题底 + 白字 + 稍重字重」，不再靠比二级更高。 */
+.tbm2-lv1 {
+  display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+  height: var(--tbm-h); padding: 0 calc(13px * var(--ui));
+  font-family: inherit; font-weight: var(--ui-fw-m, 600);
+  font-size: calc(12.5px * var(--ui) * var(--ui-fs)); color: var(--ink);
+  background: rgba(var(--panel-rgb, 255, 255, 255), var(--glass-ctl, 0.83));
+  border: 1px solid var(--line); border-radius: calc(9px * var(--ui));
+  white-space: nowrap; transition: background .16s, color .16s, border-color .16s, box-shadow .16s, font-weight .16s;
+}
+.tbm2-lv1:hover { color: var(--accent); border-color: rgba(37, 99, 235, .4); }
+.tbm2-lv1.on {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff; border-color: transparent;
+  font-weight: var(--ui-fw-b, 700);
+  box-shadow: 0 2px 8px rgba(37, 99, 235, .34);
+}
+/* 二级分组（仅显示当前模块那一组） */
+.tbm2-lv2grp { display: none; gap: calc(5px * var(--ui)); align-items: center; }
+.tbm2-lv2grp.on { display: flex; }
+/* 二级项（视图按钮 + ▾ 窗口选项）—— v43：整组盒高 = var(--tbm-h)，
+   组内两个子按钮用 align-items:stretch 自动等高，故 lv2 / lv2btn / more 三者必然一致。 */
+.tbm2-lv2 {
+  position: relative; display: inline-flex; align-items: stretch;
+  /* ★ 本批次（需求二）**突出层级**：二级项盒高比一级（--tbm-h）矮 4px、
+     描边更淡、底色更透 ⇒ 与一级的实心高亮形成明确的「主 / 次」关系。 */
+  height: calc(var(--tbm-h) - 4px);
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  border-radius: calc(8px * var(--ui));
+  background: rgba(var(--panel-rgb, 255, 255, 255), calc(var(--glass-ctl, .83) * .72));
+  overflow: visible;
+  transition: border-color .16s, box-shadow .16s, background .16s;
+}
+.tbm2-lv2.on { border-color: transparent; box-shadow: 0 2px 8px rgba(37, 99, 235, .30); }
+.tbm2-lv2.on .tbm2-more { color: rgba(255, 255, 255, .82); border-left-color: rgba(255, 255, 255, .28); }
+.tbm2-lv2.on .tbm2-more:hover { color: #fff; background: rgba(255, 255, 255, .14); }
+.tbm2-lv2btn {
+  cursor: pointer; font-family: inherit; border: none; background: transparent;
+  height: auto; padding: 0 calc(11px * var(--ui));
+  /* ★ 本批次（需求二）弱化二级：字号 / 字重 / 颜色都低于一级，选中时才提到实心高亮 */
+  font-size: calc(11.5px * var(--ui) * var(--ui-fs)); color: var(--ink-faint);
+  font-weight: var(--ui-fw, 400);
+  border-radius: calc(8px * var(--ui)) 0 0 calc(8px * var(--ui)); white-space: nowrap;
+  font-weight: var(--ui-fw-m, 600);
+  transition: color .16s, background .16s;
+}
+.tbm2-lv2btn:hover { color: var(--accent); background: rgba(37, 99, 235, .08); }
+.tbm2-lv2.on .tbm2-lv2btn {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff; font-weight: var(--ui-fw-b, 700);
+}
+.tbm2-more {
+  cursor: pointer; font-family: inherit; border: none; background: transparent;
+  width: calc(24px * var(--ui)); font-size: .72em; color: var(--ink-faint); opacity: .8;
+  border-left: 1px solid var(--line);
+  border-radius: 0 calc(8px * var(--ui)) calc(8px * var(--ui)) 0;
+  transition: color .16s, background .16s, opacity .16s;
+}
+.tbm2-more:hover { color: var(--accent); background: rgba(37, 99, 235, .08); opacity: 1; }
+.tbm2-lv2.open .tbm2-more { color: var(--accent); opacity: 1; transform: rotate(180deg); }
+/* 窗口选项下拉（单窗/三窗 · 全景/特写 · 一致/简洁） */
+.tbm2-drop {
+  position: absolute; top: calc(100% + 5px); right: 0; z-index: 40;
+  min-width: calc(120px * var(--ui)); padding: calc(5px * var(--ui));
+  display: none; flex-direction: column; gap: 2px;
+  background: rgba(var(--panel-rgb, 255, 255, 255), .97);
+  border: 1px solid var(--line); border-radius: calc(10px * var(--ui));
+  box-shadow: 0 12px 30px rgba(2, 6, 23, .18);
+  backdrop-filter: blur(10px);
+}
+.tbm2-lv2.open .tbm2-drop { display: flex; }
+.tbm2-drop button {
+  text-align: left; cursor: pointer; font-family: inherit;
+  height: calc(28px * var(--ui)); padding: 0 calc(11px * var(--ui));
+  font-size: calc(12px * var(--ui) * var(--ui-fs)); color: var(--ink);
+  background: transparent; border: 1px solid transparent; border-radius: calc(6px * var(--ui));
+  display: flex; align-items: center; gap: 6px; white-space: nowrap;
+}
+.tbm2-drop button:hover { background: rgba(37, 99, 235, .08); color: var(--accent); }
+.tbm2-drop button.on { background: var(--accent); color: #fff; }
+.tbm2-drop button.on::before { content: "✓"; font-size: .9em; }
+/* 隐藏的兼容容器（旧 id，脚本仍可查询但不可见） */
+.tbm2-hidden { display: none !important; }
+/* ★ v41（需求三.3）：「面板与悬浮窗」按钮（紧邻沉浸模式按钮）
+   ★ v43（需求二·1）：盒高与总菜单统一到 var(--tbm-h)；样式与沉浸模式同为「工具按钮」，
+   视觉权重低于「模块 / 视图」两档 —— 层次由填充深浅表达。 */
+.tb-panelmenu {
+  /* ★ 本批次（需求五）：沉浸模式 + 全局设置 一起靠右 */
+  margin-left: calc(6px * var(--ui)); margin-right: calc(10px * var(--ui));
+  display: inline-flex; align-items: center; gap: 6px; flex: none;
+  height: var(--tbm-h); padding: 0 calc(12px * var(--ui));
+  font-size: calc(12px * var(--ui) * var(--ui-fs)); font-weight: var(--ui-fw-m, 600);
+  color: var(--ink-dim);
+  background: rgba(var(--panel-rgb, 255, 255, 255), var(--glass-ctl, .83));
+  border: 1px solid var(--line); border-radius: calc(9px * var(--ui)); cursor: pointer;
+  transition: color .16s, background .16s, border-color .16s;
+}
+.tb-panelmenu:hover { color: #fff; background: linear-gradient(135deg, #2563eb, #22d3ee); border-color: transparent; }
+.tb-panelmenu svg { flex: none; }
+/* 其下级浮层：与其它 .opt-fly 同一套样式（此处仅定位微调） */
+#flyPanelMenu2 { z-index: 60; }
+/* ★ v61（需求4）：「全局设置」浮层必须**排在最上方、不被任何内容遮挡**。
+   浮层是 #titleBar（z-index 15，自成层叠上下文）的子元素，因此无论它自己写多大的
+   z-index，都无法超过标题栏这一层 —— 而面板 .card 最高到 60（.card.sv-active 40 /
+   .card.pm-dragging 60）会整块盖住浮层。故浮层打开期间把标题栏这一层整体抬到最上，
+   关闭时由 JS 摘掉 .fly-open 还原（不影响任何其它布局 / 遮挡关系）。 */
+#titleBar.fly-open { z-index: 200; }
+
+/* ---------- 综合视图窗口管理器 ---------- */
+#comboUI { position: fixed; inset: 0; z-index: 6; display: none; pointer-events: none; }
+#comboUI.on { display: block; }
+#comboUI .ccell {
+  position: absolute; background: transparent; border: 1px solid rgba(255,255,255,.16);
+  border-radius: 12px; overflow: hidden; pointer-events: none;
+}
+#comboUI .ccell-h {
+  height: 30px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px;
+  background: linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,.05));
+  border-bottom: 1px solid rgba(255,255,255,.12); cursor: pointer; user-select: none; pointer-events: auto;
+}
+#comboUI .ccell-h span { position: relative; padding-left: 9px; font-size: calc(15px * var(--ui-fs)); font-weight: var(--ui-fw-b, 700); color: #eaf2ff; letter-spacing: .5px; }
+#comboUI .ccell-x {
+  border: 0; background: rgba(255,255,255,.14); color: #eaf2ff; border-radius: 6px; width: 22px; height: 20px;
+  font-size: calc(13px * var(--ui-fs)); line-height: 1; cursor: pointer; font-family: inherit;
+}
+#comboUI .ccell-x:hover { background: rgba(255,255,255,.3); }
+#comboUI .cdiv { position: absolute; z-index: 7; pointer-events: auto; }
+#comboUI .cdiv:hover { background: rgba(37,99,235,.25); }
+#comboUI .cdiv#spV, #comboUI .cdiv#spV2 { width: 8px; cursor: col-resize; }
+#comboUI .cdiv#spL1, #comboUI .cdiv#spR1 { height: 8px; cursor: row-resize; }
+
+/* ---------- 观测点数据面板（默认时间面板左侧；风格与其它浮窗一致，可折叠 / 拖动） ---------- */
+#geoInfo {
+  z-index: 20; display: none; width: 344px; max-width: 412px;
+  padding: 0 14px 10px; font-size: calc(12.5px * var(--ui-fs)); line-height: 1.5;
+  /* ★ v44（需求二）：**移除右侧与下侧的滚动条 / 滑动块**。
+     旧写法 `overflow-y: auto`（且未声明 overflow-x）会被浏览器按规范把 overflow-x
+     也算成 auto ⇒ 内容一旦略高 / 略宽，右侧**和**下方同时冒出滚动条与滑块（用户截图）。
+     现在彻底不滚动：不设高度上限，内容超高时由 syncPanelCap() 给整个面板写
+     `--timecard-fit`（zoom）**等比缩小到完整显示**，永不出现滚动条。 */
+  max-height: none; overflow: visible;
+  zoom: var(--timecard-fit, 1);
+  --pad-x: calc(14px * var(--ui));
+}
+#geoInfo.on { display: block; }
+/* 折叠态：只留标题行（宽度同上，保证表头摘要不被截断） */
+#geoInfo.gi-min { width: auto; }
+#geoInfo.gi-min .gi-body { display: none; }
+#geoInfo .gi-body { display: flex; flex-direction: column; padding-top: 8px; }
+#geoInfo .pi { display: flex; align-items: baseline; gap: 6px; padding: 3px 0; }
+#geoInfo .pi-k { flex: none; min-width: 68px; color: var(--ink-dim); font-size: calc(11.5px * var(--ui-fs)); white-space: nowrap; }
+/* 数值行一律不换行：面板宽度已按最长行（全年昼长 / 日出日落方位）预留 */
+#geoInfo .pi-v { flex: 1; text-align: right; color: var(--ink); font-weight: var(--ui-fw-m, 600); white-space: nowrap; }
+#geoInfo .pi.hero { flex-direction: column; align-items: center; gap: 1px; padding: 6px 0 4px;
+  border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin: 3px 0; }
+#geoInfo .pi.hero .pi-k { min-width: 0; }
+#geoInfo .pi-big { font-size: calc(21px * var(--ui-fs)); font-weight: var(--ui-fw-b, 800); letter-spacing: 1px; color: #b45309; line-height: 1.2; }
+#geoInfo .pi-cap { font-size: calc(11px * var(--ui-fs)); color: var(--ink-dim); }
+#geoInfo .pi-curve { display: block; padding-top: 6px; }
+/* 全年昼长曲线：高度固定、宽度自适应；画布内部分辨率由 JS 按实际显示尺寸 × devicePixelRatio
+   重建（此前固定 464×156 内部尺寸 + CSS 拉伸，宽高比不一致导致文字被压扁） */
+#geoInfo #cvYearCurve { width: 100%; height: 92px; display: block; }
+
+/* =====================================================================
+   自适应（v2.5）：整个界面随屏幕尺寸等比缩放
+   ---------------------------------------------------------------------
+   --uiW 由屏幕宽度断点决定、--uiH 由屏幕高度断点决定，二者相乘得到统一
+   缩放系数 --ui。下面集中覆盖上文各处的固定像素值，使标题栏 / 时间面板 /
+   显示设置 / 底部控制条 / 综合视图子窗口在笔记本小屏、低矮窗口、超宽大屏
+   上都能完整显示、互不重叠。
+   ===================================================================== */
+
+/* --- 宽度断点：越宽的屏放得越大，越窄的屏收得越小（断点留有余量，避免窗口边框导致刚好卡在边界） --- */
+@media (min-width: 2400px)                        { :root { --uiW: 1.26; } }
+@media (min-width: 2000px) and (max-width: 2399px) { :root { --uiW: 1.16; } }
+@media (min-width: 1760px) and (max-width: 1999px) { :root { --uiW: 1.06; } }
+@media (min-width: 1560px) and (max-width: 1759px) { :root { --uiW: 1.00; } }
+@media (max-width: 1559px)                        { :root { --uiW: 0.94; } }
+@media (max-width: 1400px)                        { :root { --uiW: 0.88; } }
+@media (max-width: 1240px)                        { :root { --uiW: 0.82; } }
+@media (max-width: 1100px)                        { :root { --uiW: 0.75; } }
+@media (max-width: 980px)                         { :root { --uiW: 0.68; } }
+@media (max-width: 860px)                         { :root { --uiW: 0.60; } }
+@media (max-width: 720px)                         { :root { --uiW: 0.52; } }
+
+/* --- 高度断点：低矮窗口进一步收窄，避免面板超出屏幕 --- */
+@media (max-height: 940px) { :root { --uiH: 0.97; } }
+@media (max-height: 820px) { :root { --uiH: 0.92; } }
+@media (max-height: 700px) { :root { --uiH: 0.86; } }
+@media (max-height: 600px) { :root { --uiH: 0.78; } }
+/* v23.8：手机横屏（高度常常只有 300~460px）再收一档，浮窗不会顶出屏幕 */
+@media (max-height: 480px) { :root { --uiH: 0.70; } }
+@media (max-height: 400px) { :root { --uiH: 0.62; } }
+
+/* --- 顶部标题栏 --- */
+#titleBar { padding: 0 calc(20px * var(--ui)); gap: calc(13px * var(--ui)); }
+.title-badge {
+  width: calc(38px * var(--ui)); height: calc(38px * var(--ui));
+  border-radius: 50%;
+}
+.tb-text h1 { font-size: calc(16.5px * var(--ui) * var(--ui-fs)); }
+#titleBar .seg { height: calc(30px * var(--ui)); }
+#titleBar .seg button { height: calc(28px * var(--ui)); padding: 0 calc(14px * var(--ui)); font-size: calc(12px * var(--ui) * var(--ui-fs)); }
+
+/* --- 右侧时间面板 --- */
+#timeCard {
+  right: calc(16px * var(--ui)); top: var(--dock-top);
+  width: calc(336px * var(--ui));
+  padding: 0 calc(16px * var(--ui)) calc(12px * var(--ui));
+  gap: calc(10px * var(--ui));
+  /* max-height 见上方主规则（min(--cap, 视口剩余高度)），此处不再覆盖 */
+  --pad-x: calc(16px * var(--ui));
+}
+/* 时间面板自身会滚动（窗口很矮时），表头保持吸附在顶部 */
+#timeCard > .card-head { position: sticky; top: 0; }
+#timeCard.min { width: auto; }
+.t-main { gap: calc(8px * var(--ui)); }
+#tDate { font-size: calc(15px * var(--ui) * var(--ui-fs)); }
+#tClock { font-size: calc(26px * var(--ui) * var(--ui-fs)); }
+.t-sub { font-size: calc(11px * var(--ui) * var(--ui-fs)); }
+.link { font-size: calc(11.5px * var(--ui) * var(--ui-fs)); padding: calc(2px * var(--ui)) calc(4px * var(--ui)); border-radius: calc(6px * var(--ui)); }
+.terms { gap: calc(6px * var(--ui)); }
+.term { border-radius: calc(9px * var(--ui)); padding: calc(5px * var(--ui)) calc(2px * var(--ui)); }
+.term .n { font-size: calc(12px * var(--ui) * var(--ui-fs)); }
+.term .d { font-size: calc(10px * var(--ui) * var(--ui-fs)); margin-top: calc(1px * var(--ui)); }
+.term-note { font-size: calc(11px * var(--ui) * var(--ui-fs)); }
+.sb { gap: calc(3px * var(--ui)); }
+.sb-head { font-size: calc(11.5px * var(--ui) * var(--ui-fs)); }
+.sb-head output { font-size: calc(12.5px * var(--ui) * var(--ui-fs)); }
+.ticks { height: calc(24px * var(--ui)); }
+.ticks .tk { font-size: calc(9.5px * var(--ui) * var(--ui-fs)); }
+.ticks .tk.t2 { top: calc(11px * var(--ui)); }
+.ticks .tk.key { font-size: calc(10.5px * var(--ui) * var(--ui-fs)); }
+.facts { gap: calc(7px * var(--ui)) calc(8px * var(--ui)); padding-top: calc(9px * var(--ui)); }
+.facts b { font-size: calc(13px * var(--ui) * var(--ui-fs)); }
+.facts i { font-size: calc(10px * var(--ui) * var(--ui-fs)); margin-top: calc(1px * var(--ui)); }
+
+/* --- 左侧显示设置 --- */
+#optsCard {
+  left: calc(16px * var(--ui)); top: var(--dock-top);
+  width: calc(292px * var(--ui));
+  max-height: calc(100vh - var(--tb-h) - 130px * var(--ui));
+  max-height: min(var(--cap, 100vh), calc(100vh - var(--tb-h) - 130px * var(--ui)));
+}
+.grp-tip { font-size: calc(10.5px * var(--ui) * var(--ui-fs)); margin: calc(8px * var(--ui)) 0 0; }
+.dim { font-size: calc(10.5px * var(--ui) * var(--ui-fs)); }
+.clr-hex { font-size: calc(10.5px * var(--ui) * var(--ui-fs)); }
+.btn-row { gap: calc(8px * var(--ui)); padding: calc(4px * var(--ui)) 0 0; }
+
+/* 设置项行：标签 + 控件 + 读数对齐排布（原来没有 flex，窄屏下容易错位） */
+.row { display: flex; align-items: center; gap: calc(8px * var(--ui)); padding: calc(3px * var(--ui)) 0; }
+.row > label { flex: none; width: auto; white-space: nowrap; font-size: calc(11.5px * var(--ui) * var(--ui-fs)); color: var(--ink-dim); max-width: 62%; }
+.row input[type=range] { flex: 1 1 auto; min-width: 0; }
+.row > output { flex: none; min-width: calc(46px * var(--ui)); text-align: right; font-size: calc(11.5px * var(--ui) * var(--ui-fs)); font-variant-numeric: tabular-nums; color: var(--ink); }
+.row input[type=number] {
+  flex: 1 1 auto; min-width: 0; border: 1px solid var(--line); border-radius: calc(7px * var(--ui));
+  padding: calc(3px * var(--ui)) calc(6px * var(--ui)); font-family: inherit; font-size: calc(11.5px * var(--ui) * var(--ui-fs));
+  background: rgba(var(--panel-rgb, 255, 255, 255), var(--glass-ctl, 0.83)); color: var(--ink);
+}
+.row select { font-size: calc(11.5px * var(--ui) * var(--ui-fs)); padding: calc(3px * var(--ui)) calc(6px * var(--ui)); border-radius: calc(7px * var(--ui)); }
+.row input[type=color] { width: calc(30px * var(--ui)); height: calc(22px * var(--ui)); border-radius: calc(6px * var(--ui)); }
+.unit { font-size: calc(11px * var(--ui) * var(--ui-fs)); min-width: calc(22px * var(--ui)); }
+
+/* 开关 */
+.sw { gap: calc(9px * var(--ui)); padding: calc(4px * var(--ui)) 0; }
+.sw .track { width: calc(32px * var(--ui)); height: calc(18px * var(--ui)); border-radius: calc(10px * var(--ui)); }
+.sw .track::after { width: calc(14px * var(--ui)); height: calc(14px * var(--ui)); top: calc(2px * var(--ui)); left: calc(2px * var(--ui)); }
+.sw input:checked + .track::after { transform: translateX(calc(14px * var(--ui))); }
+.sw-label { font-size: calc(12px * var(--ui) * var(--ui-fs)); }
+
+/* 滑块 */
+input[type=range] { height: calc(18px * var(--ui)); }
+input[type=range]::-webkit-slider-runnable-track { height: calc(4px * var(--ui)); border-radius: calc(2px * var(--ui)); }
+input[type=range]::-webkit-slider-thumb { width: calc(14px * var(--ui)); height: calc(14px * var(--ui)); margin-top: calc(-5px * var(--ui)); border-width: calc(2px * var(--ui)); }
+input[type=range]::-moz-range-track { height: calc(4px * var(--ui)); }
+
+/* --- 底部控制条 --- */
+#controlBar {
+  bottom: calc(14px * var(--ui)); gap: calc(12px * var(--ui)); padding: calc(10px * var(--ui)) calc(16px * var(--ui));
+  border-radius: calc(16px * var(--ui)); max-width: calc(100vw - 2 * 16px * var(--ui));
+}
+#controlBar.min { padding: calc(6px * var(--ui)) calc(12px * var(--ui)); }
+.cb-toggle { font-size: calc(10.5px * var(--ui) * var(--ui-fs)); padding: calc(1px * var(--ui)) calc(9px * var(--ui)); top: calc(5px * var(--ui)); right: calc(8px * var(--ui)); }
+.cb-group { gap: calc(8px * var(--ui)); }
+.cb-sep { height: calc(26px * var(--ui)); }
+.cb-cap { font-size: calc(11.5px * var(--ui) * var(--ui-fs)); }
+.btn { border-radius: calc(9px * var(--ui)); padding: calc(6px * var(--ui)) calc(13px * var(--ui)); font-size: calc(12.5px * var(--ui) * var(--ui-fs)); height: calc(31px * var(--ui)); gap: calc(5px * var(--ui)); }
+.btn.xs { height: calc(27px * var(--ui)); padding: calc(4px * var(--ui)) calc(10px * var(--ui)); font-size: calc(12px * var(--ui) * var(--ui-fs)); }
+.btn.play { min-width: calc(88px * var(--ui)); }
+/* ★ v43（需求二·1）：上面这条 .btn 响应式规则位于文件后段，会把标题栏里
+   「沉浸模式 / 面板与悬浮窗」两个工具按钮重新压回 31px —— 此处按 id 复位到 --tbm-h，
+   保证总菜单整排等高（否则探针实测极差 3px）。 */
+#btnImmersive, #btnPanelMenu2 { height: var(--tbm-h); padding: 0 calc(12px * var(--ui)); border-radius: calc(9px * var(--ui)); }
+.speed { gap: calc(8px * var(--ui)); }
+.speed label { font-size: calc(11.5px * var(--ui) * var(--ui-fs)); }
+.speed input[type=range] { width: calc(110px * var(--ui)); }
+.speed output { font-size: calc(11.5px * var(--ui) * var(--ui-fs)); min-width: calc(124px * var(--ui)); }
+.seg { border-radius: calc(9px * var(--ui)); }
+.seg button { padding: calc(6px * var(--ui)) calc(14px * var(--ui)); height: calc(29px * var(--ui)); font-size: calc(12.5px * var(--ui) * var(--ui-fs)); }
+
+/* --- 视窗框标题 --- */
+.pane { border-radius: calc(12px * var(--ui)); }
+.pane .pane-h { height: calc(30px * var(--ui)); padding: 0 calc(10px * var(--ui)); border-radius: calc(11px * var(--ui)) calc(11px * var(--ui)) 0 0; }
+.pane .pane-h span { font-size: calc(15px * var(--ui) * var(--ui-fs)); }
+.pane .p-hint { left: calc(12px * var(--ui)); top: calc(38px * var(--ui)); font-size: calc(11px * var(--ui) * var(--ui-fs)); }
+
+/* --- 综合视图子窗口 --- */
+#comboUI .ccell { border-radius: calc(12px * var(--ui)); }
+#comboUI .ccell-h { height: calc(30px * var(--ui)); padding: 0 calc(10px * var(--ui)); }
+#comboUI .ccell-h span { font-size: calc(15px * var(--ui) * var(--ui-fs)); }
+#comboUI .ccell-x { width: calc(22px * var(--ui)); height: calc(20px * var(--ui)); font-size: calc(13px * var(--ui) * var(--ui-fs)); border-radius: calc(6px * var(--ui)); }
+/* ★ v61（需求5）：地球侧综合视图窗格的折叠按钮用的是裸文本「—」（.ccell-x），
+   不在 .card-head .link[data-ic] 体系内，这里单独给它补同一套图标 ——
+   展开态「一横线」、折叠态「V 形小箭头」（折叠态 = .ccell.folded）。 */
+#comboUI .ccell-x {
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 0 !important;                     /* 视觉隐藏「—」文本，保留无障碍可读 */
+}
+#comboUI .ccell-x::before {
+  content: ""; width: calc(13px * var(--ui)); height: calc(2px * var(--ui));
+  border-radius: calc(1px * var(--ui)); background: currentColor;
+  transition: transform .18s ease, width .18s ease, height .18s ease;
+}
+#comboUI .ccell.folded .ccell-x::before {
+  width: calc(9px * var(--ui)); height: calc(9px * var(--ui));
+  background: none;
+  border-right: calc(2px * var(--ui)) solid currentColor;
+  border-bottom: calc(2px * var(--ui)) solid currentColor;
+  border-radius: 0;
+  /* ★ v61 修正：同上方 .card-head 折叠图标，显式锁死旋转（折叠态必为「V」）。 */
+  transform: rotate(45deg) translate(calc(-1px * var(--ui)), calc(-1px * var(--ui))) !important;
+}
+
+/* ★ v40（需求三）：综合视图下，浮窗（设置 / 时间）必须**完全不透明** ——
+   否则公转示意窗格的边框 / 表头会透过多半透明的毛玻璃面板显出来，造成
+   「窗格边框干扰设置面板 / 时间面板」的观感（用户截图问题）。
+   这里仅对综合视图下的这两块面板把不透明度拉满（面板背景由 --glass-a 控制，
+   用户在「界面与主题」里调的透明度仍然对其它视图生效）。 */
+/* ★ 本批次（需求二）修复：综合视图下这块面板**不再强制不透明**。
+   旧写法（v40）把 --glass-* 全部拉满、底色改成纯 rgb(var(--panel-rgb))，是为了压住
+   「窗格边框透过来」的干扰；但副作用是「面板背景不透明度」滑块对综合视图完全失效 ——
+   与用户「所有面板窗口都需同步更新透明度」的要求冲突。
+   现在去掉强制不透明，让它与其余面板一样引用全局 --panel（内含 --glass-a），
+   即滑块一处拖动、全站面板（含综合视图）同步。 */
+body[data-view="combo"] #optsCard,
+body[data-view="combo"] #timeCard,
+body[data-view="combo"] #geoInfo {
+  background: var(--panel);
+  backdrop-filter: blur(var(--glass-blur, 0px)); -webkit-backdrop-filter: blur(var(--glass-blur, 0px));
+}
+
+/* --- 观测点数据面板 / 加载提示 --- */
+#geoInfo {
+  width: calc(344px * var(--ui)); max-width: calc(412px * var(--ui));
+  padding: 0 calc(14px * var(--ui)) calc(10px * var(--ui));
+  font-size: calc(12.5px * var(--ui) * var(--ui-fs));
+  --pad-x: calc(14px * var(--ui));
+}
+#geoInfo.gi-min { width: auto; }
+#geoInfo .gi-body { padding-top: calc(8px * var(--ui)); }
+#geoInfo .pi-k { min-width: calc(68px * var(--ui)); font-size: calc(11.5px * var(--ui) * var(--ui-fs)); }
+#geoInfo .pi-big { font-size: calc(21px * var(--ui) * var(--ui-fs)); }
+#geoInfo .pi-cap { font-size: calc(11px * var(--ui) * var(--ui-fs)); }
+#loading { padding: calc(10px * var(--ui)) calc(18px * var(--ui)); border-radius: calc(12px * var(--ui)); font-size: calc(13px * var(--ui) * var(--ui-fs)); }
+
+/* --- 窄屏：压缩标题栏，保证三个视图切换按钮始终可点 --- */
+@media (max-width: 1150px) {
+  #titleBar { padding: 0 calc(10px * var(--ui)); gap: calc(9px * var(--ui)); }
+  #titleBar .title-views.seg button { padding: 0 calc(9px * var(--ui)); }
+  .tb-text h1 { white-space: normal; line-height: 1.15; }
+}
+@media (max-width: 920px) {
+  .title-badge { display: none; }
+}
+
+/* ---------- v4.1 菜单化显示设置：主面板只列一级菜单，内容在右侧浮层展开 ---------- */
+#optsCard { overflow: visible; }
+#optsCard.collapsed .opt-fly { display: none; }
+#optsCard .card-body { border-radius: var(--r); }
+
+/* 一级菜单行 */
+.opt-menu { display: flex; flex-direction: column; gap: calc(3px * var(--ui)); }
+.opt-row {
+  display: flex; align-items: center; gap: calc(8px * var(--ui)); width: 100%;
+  padding: calc(7px * var(--ui)) calc(9px * var(--ui));
+  border: 1px solid var(--line); border-radius: calc(10px * var(--ui));
+  background: linear-gradient(180deg, rgba(37,99,235,.06), rgba(37,99,235,.015));
+  cursor: pointer; text-align: left; font-family: inherit; color: var(--ink);
+}
+.opt-row:hover { background: linear-gradient(180deg, rgba(37,99,235,.14), rgba(37,99,235,.05)); }
+.opt-row.on { background: rgba(var(--panel-rgb, 255, 255, 255), var(--glass-ctl, 0.83)); border-color: rgba(37,99,235,.45); box-shadow: inset 0 0 0 1px rgba(37,99,235,.22); }
+.opt-ico { font-size: calc(14px * var(--ui) * var(--ui-fs)); line-height: 1; flex: none; font-style: normal; }
+.opt-txt { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; gap: 1px; }
+.opt-t { font-size: calc(12.5px * var(--ui) * var(--ui-fs)); font-weight: var(--ui-fw-b, 700); color: var(--ink); white-space: nowrap; }
+.opt-sub { font-size: calc(10px * var(--ui) * var(--ui-fs)); color: var(--ink-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.opt-row .chev { margin-left: auto; flex: none; color: var(--ink-faint); font-size: calc(13px * var(--ui) * var(--ui-fs)); font-style: normal; transition: transform .15s ease; }
+.opt-row.on .chev { transform: translateX(2px); color: var(--accent); }
+
+/* ---- v26.1（需求⑫）：二级菜单标题前的总开关 ----
+   与弹窗标题行里那个开关是同一个状态的两处入口（前者是「镜像」，id 后缀 __m），
+   点它只切开关、不展开弹窗（JS 里按 .lv2-row > .sw 拦掉冒泡）。
+   位置在图标之前、标题左侧 —— 不打开弹窗也能直接开 / 关该菜单对应的地理事物。 */
+.lv2-row > .sw { flex: none; padding: 0; gap: 0; margin-right: calc(2px * var(--ui)); }
+.lv2-row > .sw .track { width: calc(26px * var(--ui)); height: calc(15px * var(--ui)); border-radius: calc(8px * var(--ui)); }
+.lv2-row > .sw .track::after { width: calc(11px * var(--ui)); height: calc(11px * var(--ui)); top: calc(2px * var(--ui)); left: calc(2px * var(--ui)); }
+.lv2-row > .sw input:checked + .track::after { transform: translateX(calc(11px * var(--ui))); }
+.lv2-row.has-sw { padding-left: calc(6px * var(--ui)); }
+
+/* ---- v26.1（需求③）：掩膜数据装载状态行 ----
+   以前掩膜缺失时图层「开着却什么都不画」、界面上毫无提示，这里把结果写出来。 */
+.geo-stat {
+  margin: calc(6px * var(--ui)) 0 calc(2px * var(--ui)); padding: calc(5px * var(--ui)) calc(8px * var(--ui));
+  border-radius: calc(7px * var(--ui)); font-size: calc(10.5px * var(--ui) * var(--ui-fs));
+  line-height: 1.5; color: var(--ink-faint); background: rgba(100,116,139,.10);
+  border-left: calc(3px * var(--ui)) solid rgba(100,116,139,.45);
+}
+.geo-stat.ok { color: #0f766e; background: rgba(16,185,129,.10); border-left-color: #10b981; }
+.geo-stat.bad { color: #b91c1c; background: rgba(239,68,68,.10); border-left-color: #ef4444; }
+
+/* ---- v26.1（需求④）：已放置小人列表里的逐人取色框 ---- */
+.pt-clr {
+  flex: none; width: calc(20px * var(--ui)); height: calc(20px * var(--ui)); padding: 0;
+  border: 1px solid var(--line); border-radius: calc(5px * var(--ui)); background: none; cursor: pointer;
+}
+.pt-clr::-webkit-color-swatch-wrapper { padding: 1px; }
+.pt-clr::-webkit-color-swatch { border: 0; border-radius: calc(4px * var(--ui)); }
+
+/* ---- v26.1（需求⑦）：选点模式提示条 ----
+   进入「标记点 / 球面最短距离」这类需要在地球上取点的模式后常驻在屏幕顶部，
+   写明当前处于选点模式以及具体选哪一种点（观测点定位不算，它是查询不是放置）。 */
+#pickTip {
+  /* --dock-top 由 JS 按「标题栏 / 窗格表头的真实下沿」实时写入（见 syncDockTop），
+     提示条因此始终贴在窗口表头之下，不会压住窗口标题。 */
+  position: fixed; left: 50%; transform: translateX(-50%); top: calc(var(--dock-top, 70px) + 2px);
+  z-index: 40; display: flex; align-items: center; gap: calc(9px * var(--ui));
+  max-width: min(60vw, 720px); padding: calc(6px * var(--ui)) calc(10px * var(--ui));
+  border-radius: calc(10px * var(--ui)); border: 1px solid rgba(37,99,235,.45);
+  background: linear-gradient(180deg, rgba(219,234,254,.97), rgba(191,219,254,.95));
+  box-shadow: 0 8px 22px rgba(2,6,23,.18); color: #1e3a8a;
+  font-size: calc(12px * var(--ui) * var(--ui-fs)); font-weight: var(--ui-fw-b, 700);
+  /* 提示条横在地球上方，会挡住那一横条的点击 —— 选点时用户在那里点了会没反应。
+     因此条体本身不吃事件，只让「退出选点模式」按钮可点。 */
+  pointer-events: none;
+}
+#pickTip .pt-x { pointer-events: auto; }
+#pickTip[hidden] { display: none; }
+#pickTip .pt-ico { flex: none; font-style: normal; font-size: calc(15px * var(--ui) * var(--ui-fs)); }
+#pickTip .pt-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#pickTip .pt-x {
+  flex: none; margin-left: auto; padding: calc(3px * var(--ui)) calc(9px * var(--ui));
+  border: 1px solid rgba(37,99,235,.45); border-radius: calc(7px * var(--ui));
+  background: rgba(255,255,255,.85); color: #1d4ed8; cursor: pointer;
+  font-family: inherit; font-size: calc(11px * var(--ui) * var(--ui-fs)); font-weight: var(--ui-fw-b, 700);
+}
+#pickTip .pt-x:hover { background: #fff; }
+body.immersive #pickTip { display: none; }
+
+/* 右侧浮层（一级内容 / 二级菜单列表）：高度继承主面板的 JS 夹取值（max-height: inherit），
+   内部自行滚动；鼠标移出整个菜单范围后由 JS 自动收起 */
+.opt-fly {
+  display: none; position: absolute; left: calc(100% + 8px); top: 0;
+  width: calc(272px * var(--ui)); max-height: inherit;
+  /* ★ 本批次（需求二）修复：二级菜单浮层改为**跟随「面板背景不透明度」滑块**。
+     旧写法是纯色 rgb(var(--panel-rgb))（v36 为压住「透出下层内容」而设的不透明），
+     导致太阳/地球两侧的二级菜单面板完全不受透明度滑块控制。
+     现引用 --glass-fly（applyUiTheme 由 glass 派生、下限 0.42，既跟随滑块又保留
+     「文字压得住下层」的可读性底线），不再硬编码不透明。 */
+  background: rgba(var(--panel-rgb, 255, 255, 255), var(--glass-fly, 0.96));
+  border: 1px solid var(--line); border-radius: calc(12px * var(--ui));
+  box-shadow: 0 12px 32px rgba(2,6,23,.22); padding: calc(8px * var(--ui)) calc(10px * var(--ui)) calc(10px * var(--ui));
+  overflow-y: auto; overflow-x: hidden; z-index: 30;
+  touch-action: pan-y; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin; scrollbar-color: rgba(100,116,139,.4) transparent;
+}
+.opt-fly.on { display: block; }
+/* ★ v40（需求一）：二级菜单浮层可拖拽调整尺寸 —— 抓手（.pm-grip）需绝对定位在浮层内，
+   浮层本身已是 position:absolute，无需重复定位；这里只保证抓手不被 overflow 裁掉，
+   并让内容区随高度自适应（浮层用最大高限制 + 内部滚动）。 */
+.opt-fly { overflow-y: auto; overflow-x: hidden; }
+.opt-fly.pm-resizing { overflow: hidden; }
+/* 菜单被拖到右半屏时，浮层改为向左展开 */
+#optsCard.fly-left .opt-fly { left: auto; right: calc(8px + 100%); }
+/* 浮层与菜单之间的透明"桥"：鼠标穿过间隙不触发 pointerleave 的收起计时 */
+.opt-fly::before, .opt-fly::after { content: ""; position: absolute; top: 0; bottom: 0; width: 10px; }
+.opt-fly::before { left: -10px; }
+.opt-fly::after { right: -10px; }
+#optsCard.fly-left .opt-fly::before { left: auto; right: -10px; }
+#optsCard.fly-left .opt-fly::after { right: auto; left: -10px; }
+
+.fly-head {
+  font-size: calc(12px * var(--ui) * var(--ui-fs)); font-weight: var(--ui-fw-b, 700); color: var(--ink);
+  padding: calc(2px * var(--ui)) calc(2px * var(--ui)) calc(7px * var(--ui));
+  border-bottom: 1px dashed var(--line); margin-bottom: calc(6px * var(--ui));
+  /* v20.0：标题行可能还带一个「分组开关」复选框（如「全局文字大小样式统一」），
+     故改为 flex-start + gap 布局：开关靠左、标题占满剩余宽度、关闭按钮靠右。 */
+  display: flex; align-items: center; gap: calc(7px * var(--ui));
+}
+.fly-head .fly-t { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fly-head .sw { flex: none; padding: 0; gap: calc(7px * var(--ui)); }
+.fly-close {
+  flex: none; margin-left: auto; width: calc(22px * var(--ui)); height: calc(22px * var(--ui));
+  line-height: 1; font-size: calc(16px * var(--ui) * var(--ui-fs)); color: var(--ink-faint);
+  background: transparent; border: 0; border-radius: 4px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.fly-close:hover { background: rgba(100,116,139,.12); color: var(--ink); }
+/* 分组分割线：总开关/地理事物 与 文字注释 之间 */
+.section-sep {
+  height: 1px; background: var(--line); margin: calc(8px * var(--ui)) 0;
+  border: 0;
+}
+.opt-fly .opt-row { margin: calc(3px * var(--ui)) 0; background: rgba(15,23,42,.03); }
+.opt-fly::-webkit-scrollbar { width: 8px; }
+.opt-fly::-webkit-scrollbar-thumb { background: rgba(100,116,139,.35); border-radius: 4px; }
+.opt-fly::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- v4.3 统一三级菜单 ---------- */
+/* 一级菜单行（.lv1）下方的二级容器：点击一级行后在其下方内联展开 */
+.opt-sec .lv2-wrap { display: none; }
+.opt-sec.open .lv2-wrap {
+  display: flex; flex-direction: column; gap: calc(2px * var(--ui));
+  margin: calc(3px * var(--ui)) 0 calc(5px * var(--ui)) calc(14px * var(--ui));
+  padding: calc(3px * var(--ui)) 0 calc(3px * var(--ui)) calc(8px * var(--ui));
+  border-left: 2px solid rgba(37, 99, 235, .30);
+}
+.lv1 .chev { transition: transform .18s ease; }
+.opt-sec.open > .lv1 .chev { transform: rotate(90deg); color: var(--accent); }
+
+/* 二级菜单行（紧凑样式，位于二级容器内） */
+.lv2-row { padding: calc(5px * var(--ui)) calc(8px * var(--ui)); border-radius: calc(8px * var(--ui)); background: rgba(15, 23, 42, .03); }
+.lv2-row .opt-t { font-size: calc(11.5px * var(--ui) * var(--ui-fs)); }
+.lv2-row .chev { font-size: calc(11px * var(--ui) * var(--ui-fs)); }
+.lv2-row:hover { background: rgba(37, 99, 235, .10); }
+.lv2-row.on { background: rgba(var(--panel-rgb, 255, 255, 255), var(--glass-ctl, 0.83)); border-color: rgba(37, 99, 235, .45); box-shadow: inset 0 0 0 1px rgba(37, 99, 235, .22); }
+.fly-head { color: #1e3a8a; }
+/* ===== v15.0：菜单 DOM 由 MENU 数据渲染；三级及以下统一用 .nd（可嵌套到任意层） =====
+   只有存在子级的节点才渲染 .nd-h + 展开箭头 .ar；没有子级时直接渲染成一行控件。 */
+.nd {
+  border: 1px solid var(--line); border-radius: calc(9px * var(--ui));
+  margin: calc(4px * var(--ui)) 0; background: rgba(15, 23, 42, .025); overflow: hidden;
+}
+.nd.d4 { margin-left: calc(7px * var(--ui)); background: rgba(15, 23, 42, .015); }
+.nd.d5 { margin-left: calc(14px * var(--ui)); background: transparent; }
+.nd-h {
+  display: flex; align-items: center; width: 100%; gap: calc(6px * var(--ui));
+  padding: calc(6px * var(--ui)) calc(9px * var(--ui)); cursor: pointer; user-select: none;
+  font-family: inherit; font-size: calc(11.5px * var(--ui) * var(--ui-fs)); font-weight: var(--ui-fw-b, 700); color: var(--ink);
+  text-align: left; background: transparent; border: 0;
+}
+.nd-h:hover { color: #1d4ed8; }
+/* ★ 本次可访问性修复：三级分组标题可用键盘聚焦（role=button），聚焦时给出与 hover 同款反馈 */
+.nd-h[role="button"]:focus-visible { color: #1d4ed8; border-radius: calc(7px * var(--ui)); }
+.nd-t { flex: 0 1 auto; }
+.nd-h .ar {
+  margin-left: auto; flex: none; font-style: normal; color: var(--ink-faint);
+  font-size: calc(10px * var(--ui) * var(--ui-fs)); transition: transform .18s ease;
+}
+.nd.open > .nd-h .ar { transform: rotate(180deg); color: var(--accent); }
+.nd-b {
+  display: none; padding: calc(2px * var(--ui)) calc(9px * var(--ui)) calc(8px * var(--ui));
+  background: rgba(var(--panel-rgb, 255, 255, 255), var(--glass-ctl, 0.83)); border-top: 1px dashed var(--line);
+}
+.nd.open > .nd-b { display: block; }
+/* 标题行内嵌的控件（如「类型」下拉）：隐藏重复标签、贴右显示 */
+.nd-h .inline-ctl { margin-left: auto; padding: 0; gap: calc(5px * var(--ui)); border: 0; background: transparent; }
+.nd-h .inline-ctl > label { display: none; }
+.nd-h .inline-ctl select { flex: none; min-width: calc(66px * var(--ui)); }
+.nd-h .inline-ctl + .ar { margin-left: calc(2px * var(--ui)); }
+/* 开关关闭：子级整体收起并置灰（未勾选 -> 不纳入菜单） */
+.nd.off > .nd-b { display: none !important; }
+.nd.off > .nd-h { opacity: .5; }
+.nd.off > .nd-h .ar { opacity: .5; }
+/* v21.0（需求③）：被「上级开关」压住的注释节点 —— 置灰并收起子级，
+   仍可点击（点它会自动把缺的上级开关一并打开），保证「先总开关、再地理事物、最后注释」
+   这个顺序在界面上看得见、也不会出现「点了没反应」。 */
+.nd.gated > .nd-b { display: none !important; }
+.nd.gated > .nd-h { opacity: .42; }
+.nd.gated > .nd-h .ar { opacity: .42; }
+.sw.gated { opacity: .42; }
+.sw.gated .sw-label { text-decoration: none; }
+.raw-blk { margin: calc(3px * var(--ui)) 0; }
+.menu-global { margin: calc(8px * var(--ui)) 0 calc(2px * var(--ui)); display: flex; justify-content: center; }
+.menu-global .btn { width: 100%; }
+
+/* =========================================================================
+   v18.0
+   ========================================================================= */
+
+/* ---------- v18.0-①：菜单行高收紧 ----------
+   放在文件末尾，靠层叠顺序覆盖上面的默认间距（同为后写者胜）；数值统一在原基础上收约 25%~35%，
+   只动「外边距 / 内边距 / 行高 / 间隙」，不动字号与控件尺寸 —— 更紧凑，但不会挤成一片。 */
+.row { gap: calc(7px * var(--ui)); padding: calc(2px * var(--ui)) 0; }
+.row > label, .row > output { line-height: 1.2; }
+.grp-tip { margin: calc(6px * var(--ui)) 0 0; line-height: 1.45; }
+.btn-row { gap: calc(7px * var(--ui)); padding: calc(3px * var(--ui)) 0 0; }
+.sw { gap: calc(7px * var(--ui)); padding: calc(2px * var(--ui)) 0; }
+.sw-label { line-height: 1.2; }
+
+/* 一级 / 二级菜单行 */
+.opt-row { gap: calc(7px * var(--ui)); padding: calc(5px * var(--ui)) calc(9px * var(--ui)); }
+.opt-txt { gap: 0; }
+.opt-sec.open .lv2-wrap {
+  gap: calc(1px * var(--ui));
+  margin: calc(2px * var(--ui)) 0 calc(3px * var(--ui)) calc(13px * var(--ui));
+  padding: calc(2px * var(--ui)) 0 calc(2px * var(--ui)) calc(8px * var(--ui));
+}
+.lv2-row { padding: calc(4px * var(--ui)) calc(8px * var(--ui)); }
+
+/* 右侧二级内容窗口 / 三级分组 */
+.fly-head { padding: calc(2px * var(--ui)) calc(2px * var(--ui)) calc(5px * var(--ui)); margin-bottom: calc(5px * var(--ui)); line-height: 1.2; }
+.section-sep { margin: calc(6px * var(--ui)) 0; }.nd { margin: calc(3px * var(--ui)) 0; }.nd-h { padding: calc(4.5px * var(--ui)) calc(9px * var(--ui)); }.nd-b { padding: calc(2px * var(--ui)) calc(9px * var(--ui)) calc(5px * var(--ui)); }.nd-b > .row:first-child { padding-top: calc(3px * var(--ui)); }
+.raw-blk { margin: calc(2px * var(--ui)) 0; }
+.menu-global { margin: calc(6px * var(--ui)) 0 calc(1px * var(--ui)); }
+
+/* ---------- v18.0-②：「添加点」窗口可拖动 ---------- */
+.opt-fly.fly-drag .fly-head { cursor: move; }
+.opt-fly.fly-drag .fly-head:active { cursor: grabbing; }
+.opt-fly.fly-drag .fly-close { cursor: pointer; }
+.opt-fly.dragging { z-index: 80; box-shadow: 0 18px 44px rgba(2, 6, 23, .30); }
+.opt-fly.dragging, .opt-fly.dragging * { user-select: none; -webkit-user-select: none; }
+
+/* =========================================================================
+   v19.0
+   ========================================================================= */
+
+/* ---------- v19.0-①：制作者徽章移到标题右侧（版本号取消） ---------- */
+.tb-line { display: flex; align-items: center; gap: calc(9px * var(--ui)); min-width: 0; }
+.tb-by {
+  flex: none; display: inline-flex; align-items: center; gap: calc(4px * var(--ui));
+  padding: calc(3px * var(--ui)) calc(9px * var(--ui));
+  border-radius: 999px;
+  background: linear-gradient(135deg, #fff6cf 0%, #ffe2ef 52%, #dbeaff 100%);
+  border: 1px solid rgba(37, 99, 235, .20);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .95), 0 2px 7px rgba(2, 6, 23, .07);
+  font-size: calc(10.5px * var(--ui) * var(--ui-fs)); color: #7a4a86; font-weight: var(--ui-fw-m, 600);
+  line-height: 1; white-space: nowrap; cursor: default; user-select: none;
+}
+.tb-by .eg { font-style: normal; font-size: calc(11px * var(--ui) * var(--ui-fs)); display: inline-block; }
+.tb-by:hover .eg { animation: tbEgg .75s ease; }
+@keyframes tbEgg {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  30% { transform: translateY(calc(-2px * var(--ui))) rotate(-14deg); }
+  65% { transform: translateY(calc(-1px * var(--ui))) rotate(11deg); }
+}
+
+/* ---------- v19.0-③：标题栏内的「沉浸模式」进入按钮 ----------
+   位置：紧贴「自转演示」左侧、并留出一段距离。做法是把原来给 .title-views 的
+   margin-left:auto 交给这个按钮，再由它的 margin-right 让出间隔。 */
+#titleBar .title-views { margin-left: 0; }
+.tb-immersive {
+  /* ★ 本批次（需求二）：二级视图菜单已整体移到本按钮左侧（.tbm2-lv2host 用
+     margin-left:auto 占据剩余空间），因此这里**不再需要** margin-left:auto，
+     只需与二级组保持固定间隙。 */
+  flex: none; margin-left: 0; margin-right: calc(6px * var(--ui));
+  /* ★ v43：显式覆盖 .btn 的 height:31px，与总菜单统一到 30px 一档 */
+  height: var(--tbm-h); padding: 0 calc(13px * var(--ui));
+  border-radius: calc(9px * var(--ui)); gap: calc(5px * var(--ui));
+  font-size: calc(12px * var(--ui) * var(--ui-fs));
+  color: var(--ink-dim); border-color: var(--line);
+  background: rgba(var(--panel-rgb, 255, 255, 255), var(--glass-ctl, 0.83));
+  font-weight: var(--ui-fw-m, 600);
+}
+.tb-immersive:hover { color: #fff; background: linear-gradient(135deg, #2563eb, #22d3ee); border-color: transparent; }
+.tb-immersive svg { flex: none; }
+
+/* ---------- v19.0-②：底部控制条收进一行 ----------
+   根因：控制条用 left:50% + translateX(-50%) 居中，绝对定位下 width:auto 走
+   shrink-to-fit，可用宽度只有 50vw，内容一超就换行。这里显式给 width:max-content，
+   让它先按「一行」的自然宽度撑开，再由 max-width 在窄屏兜底回退成换行。
+   顺带把「收起/展开」按钮从绝对定位改成行内最后一项 —— 一行布局下它原来会压住
+   右侧的按钮。 */
+#controlBar {
+  width: max-content;
+  gap: calc(10px * var(--ui)); row-gap: calc(7px * var(--ui));
+  padding: calc(9px * var(--ui)) calc(13px * var(--ui));
+}
+#controlBar .cb-toggle, #controlBar.min .cb-toggle {
+  position: static; order: 99; align-self: center;
+  padding: calc(2px * var(--ui)) calc(10px * var(--ui));
+}
+.cb-group { gap: calc(7px * var(--ui)); }
+.cb-sep { height: calc(22px * var(--ui)); }
+.cb-cap { font-size: calc(11px * var(--ui) * var(--ui-fs)); }
+#controlBar .btn { padding: calc(6px * var(--ui)) calc(11px * var(--ui)); font-size: calc(12px * var(--ui) * var(--ui-fs)); }
+#controlBar .btn.play { min-width: calc(82px * var(--ui)); }
+#controlBar .seg button { padding: calc(6px * var(--ui)) calc(11px * var(--ui)); font-size: calc(12px * var(--ui) * var(--ui-fs)); }
+.speed { gap: calc(7px * var(--ui)); }
+.speed input[type=range] { width: calc(96px * var(--ui)); }
+.speed output { min-width: calc(104px * var(--ui)); white-space: nowrap; }
+
+/* ---------- v19.0-③：沉浸模式 ---------- */
+/* 进入沉浸：隐藏所有面板 / 标题栏 / 控制条 / 窗格表头与分隔条，只留 3D 画面。
+   注意：窗格（#panes .pane）与综合视图单元格（#comboUI .ccell）本身是渲染
+   视口的承载盒，不能 display:none，只收掉它们的表头与边框观感。 */
+body.immersive #titleBar,
+body.immersive #timeCard,
+body.immersive #optsCard,
+body.immersive #controlBar,
+body.immersive #geoInfo { display: none !important; }
+
+body.immersive #panes .pane-h,
+body.immersive #panes .p-hint,
+body.immersive #comboUI .ccell-h,
+body.immersive #comboUI .cdiv,
+body.immersive .splitter { display: none !important; }
+body.immersive #panes .pane,
+body.immersive #comboUI .ccell { border-color: transparent; background: none; box-shadow: none; }
+
+/* 退出按钮：右上角，默认隐形；鼠标靠近右上角（body.imm-hot）或键盘聚焦时淡入 */
+.imm-exit {
+  position: fixed; z-index: 60; top: calc(10px * var(--ui)); right: calc(12px * var(--ui));
+  display: none; align-items: center; gap: calc(6px * var(--ui));
+  height: calc(34px * var(--ui)); padding: 0 calc(14px * var(--ui));
+  border-radius: 999px; border: 1px solid rgba(255, 255, 255, .22);
+  background: rgba(15, 23, 42, .62); color: #e2e8f0;
+  font-family: inherit; font-size: calc(12px * var(--ui) * var(--ui-fs)); font-weight: var(--ui-fw-m, 600);
+  cursor: pointer; white-space: nowrap;
+  backdrop-filter: blur(10px) saturate(1.3); -webkit-backdrop-filter: blur(10px) saturate(1.3);
+  box-shadow: 0 8px 24px rgba(2, 6, 23, .38);
+  opacity: 0; transform: translateY(calc(-8px * var(--ui))); pointer-events: none;
+  transition: opacity .22s ease, transform .22s ease, background .15s, color .15s;
+}
+body.immersive #btnExitImm { display: inline-flex; }
+body.immersive.imm-hot #btnExitImm,
+body.immersive #btnExitImm:focus-visible { opacity: 1; transform: none; pointer-events: auto; }
+#btnExitImm:hover { background: rgba(220, 38, 38, .82); color: #fff; border-color: rgba(255, 255, 255, .38); }
+
+/* 进入沉浸时的短暂提示（3.5s 后自行移除） */
+.imm-toast {
+  position: fixed; z-index: 70; left: 50%; top: calc(14px * var(--ui)); transform: translateX(-50%);
+  padding: calc(7px * var(--ui)) calc(16px * var(--ui)); border-radius: 999px;
+  background: rgba(15, 23, 42, .66); color: #e2e8f0; border: 1px solid rgba(255, 255, 255, .18);
+  font-size: calc(12px * var(--ui) * var(--ui-fs)); white-space: nowrap; pointer-events: none;
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  animation: immToast 3.4s ease forwards;
+}
+@keyframes immToast {
+  0% { opacity: 0; transform: translateX(-50%) translateY(calc(-8px * var(--ui))); }
+  12%, 78% { opacity: 1; transform: translateX(-50%) translateY(0); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(calc(-6px * var(--ui))); }
+}
+
+/* 窄屏：沉浸按钮只留图标，标题栏更紧凑 */
+@media (max-width: 1150px) {
+  .tb-immersive { margin-right: calc(14px * var(--ui)); padding: 0 calc(9px * var(--ui)); }
+  .tb-immersive .txi { display: none; }
+}
+
+/* =========================================================================
+   v20.0
+   ========================================================================= */
+
+/* ---------- ★ v62（需求 1）：折叠态改为「与太阳侧完全同一口径」 ----------
+   v20.0-㉔ 起，地球侧三块可折叠浮窗（设置 / 时间 / 观测点）折叠时会被改造成「胶囊」：
+   圆角 999px + 实心底色 + 换阴影 + 表头渐变 + 内边距归零。展开时要在 0.26s 内把这
+   五六项几何 / 颜色**一起**反向变形回普通卡片，用户反馈「展开的过渡动画不自然」。
+   太阳侧（#svOptsCard / #svTimeTop / …）从来不这么变形 —— 折叠只是把卡片**高度**
+   收到「只有表头」，圆角 / 底色 / 阴影一律保持不变（见本文件 svwin 家族折叠块）。
+   现在地球侧对齐这一口径，于是两侧展开 / 收起的过渡完全一致：
+     · 形状不变形（不再有 999px 圆角 ↔ 14px 圆角的形变）；
+     · 底色 / 阴影不变（不再有 毛玻璃 ↔ 实心 的跳变）；
+     · 表头不改内边距（不再有「表头高度跳一下」）；
+     · 只由 max-height（+ 圆角 / 内边距的既有 transition）承担过渡，
+       正文的隐藏由 JS（__panelFit.setFolded）在动画结束后做。 */
+:is(#optsCard.collapsed, #timeCard.min, #geoInfo.gi-min) {
+  /* 宽度收缩到内容实际所需（auto）—— 折叠态只剩表头，面板才真的紧凑 */
+  width: auto;
+  height: auto !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  max-height: var(--fold-h, calc(var(--head-h) + 8px));
+  overflow: hidden;
+  padding-bottom: 0;
+}
+:is(#optsCard.collapsed, #timeCard.min, #geoInfo.gi-min) > .card-head {
+  /* 与太阳侧同值：表头只把「下方描边」隐掉，四角与卡片同形 */
+  border-radius: calc(var(--r) - 1px);
+  border-bottom-color: transparent;
+  box-shadow: none;
+}
+/* 折叠态里摘要是唯一有信息量的一行：不参与收缩，优先保留完整读数 */
+#optsCard.collapsed > .card-head > output,
+#timeCard.min > .card-head > output,
+#geoInfo.gi-min > .card-head > output { flex: 0 0 auto; }
+/* 折叠态统一：折叠按钮不再抢眼，改为中性描边（展开态才用主题色强调） */
+#optsCard.collapsed > .card-head .link,
+#timeCard.min > .card-head .link,
+#geoInfo.gi-min > .card-head .link {
+  background: rgba(15, 23, 42, .04);
+  border-color: rgba(15, 23, 42, .16);
+  color: var(--ink-dim);
+}
+#optsCard.collapsed > .card-head .link:hover,
+#timeCard.min > .card-head .link:hover,
+#geoInfo.gi-min > .card-head .link:hover {
+  background: rgba(37, 99, 235, .14);
+  border-color: rgba(37, 99, 235, .38);
+  color: #1d4ed8;
+}
+
+/* ---------- v20.0-㉔（续）：底部控制条收起态同样收成胶囊 ---------- */
+#controlBar.min {
+  padding: calc(5px * var(--ui)) calc(13px * var(--ui));
+  border-radius: 999px;
+  box-shadow: 0 8px 22px rgba(2, 6, 23, .22), 0 1px 3px rgba(2, 6, 23, .14);
+}
+#controlBar.min .cb-toggle {
+  padding: calc(3px * var(--ui)) calc(12px * var(--ui));
+  color: var(--ink-dim);
+}
+#controlBar.min .cb-toggle:hover { color: #1d4ed8; }
+
+/* ---------- v20.0-㉓：标题栏左侧地球徽标随视图高亮 ----------
+   徽标是内联 SVG 地球图片；这里只补充「非自转」视图下的一点点视觉区分，
+   不改动标题文字（删除了标题下的小字副标题）。 */
+.title-badge[data-view="revolve"] { background: radial-gradient(circle at 34% 28%, #3a2a12, #1b1206 78%); }
+.title-badge[data-view="combo"]   { background: radial-gradient(circle at 34% 28%, #2a1f45, #150f24 78%); }
+
+/* =========================================================================
+   v23.8：触摸屏 / 移动端适配
+   -------------------------------------------------------------------------
+   1) 页面本身禁止「回弹 / 下拉刷新」——手机上的橡皮筋会干扰拖动与双指捏合；
+   2) 三枚浮窗的宽度上限锚定视口，任何缩放档位都不会溢出屏幕或被切边；
+   3) 无悬停设备（手机 / 平板 / 触摸屏一体机）没有 hover 反馈，这里补上「按下态」、
+      并把菜单行 / 开关行的最小点击高度抬到一个手指够得着的尺寸；
+      滚动容器明确交给原生触摸滚动（画布的双指捏合不会把它们卷进去）。
+   ========================================================================= */
+html, body { overscroll-behavior: none; }
+#optsCard, #timeCard, #geoInfo { max-width: calc(100vw - 24px * var(--ui)); }
+
+@media (hover: none) {
+  /* 点击热区：菜单行 / 开关行 / 一级行至少保留一指的高度（原值在 ui≈0.5 时只有 ~15px） */
+  .opt-row, .lv2-row, .nd-h, .sw { min-height: calc(32px * var(--ui)); }
+  /* 按下反馈：替代桌面端的 hover 高亮，避免「点了没反应」的误判 */
+  .opt-row:active, .lv2-row:active, .nd-h:active { background: rgba(37, 99, 235, .22); }
+  .btn:active, .seg button:active, .link:active { border-color: rgba(37, 99, 235, .55); color: #1d4ed8; }
+  /* 浮窗 / 菜单 / 三级容器的滚动：交给原生惯性滚动，且不把滚动继续传给画布 */
+  .card-body, .opt-fly, #timeCard {
+    -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+  }
+  /* 表头是拖动把手：明确禁止在其上触发浏览器的滑动手势 */
+  .card > .card-head { touch-action: none; }
+}
+
+
+/* =========================================================================
+   v25.1（需求⑥）：小人模型演示
+   -------------------------------------------------------------------------
+   · .fig-drag   —— 菜单「标记演示 › 小人模型」里的拖拽卡片（按住即抓起一个小人）
+   · .fig-ghost  —— 拖动过程中跟随光标的半透明小人（纯视觉，不接收指针事件）
+   ========================================================================= */
+.fig-drag {
+  display: flex; align-items: center; gap: calc(10px * var(--ui));
+  margin: calc(4px * var(--ui)) 0 0;
+  padding: calc(8px * var(--ui)) calc(10px * var(--ui));
+  border: 1px dashed rgba(37, 99, 235, .45); border-radius: 10px;
+  background: linear-gradient(180deg, rgba(37,99,235,.08), rgba(37,99,235,.02));
+  cursor: grab; user-select: none; -webkit-user-select: none; touch-action: none;
+  transition: border-color .15s ease, background .15s ease;
+}
+.fig-drag:hover { border-color: var(--accent); background: rgba(37,99,235,.14); }
+.fig-drag:active { cursor: grabbing; }
+.fig-drag .fig-ico { flex: none; color: var(--accent); display: block; line-height: 0; }
+.fig-drag .fig-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.fig-drag .fig-t b { font-size: calc(12px * var(--ui-fs)); font-weight: 700; color: var(--ink); }
+.fig-drag .fig-t span { font-size: calc(10.5px * var(--ui-fs)); color: var(--ink-dim); line-height: 1.45; }
+
+.fig-ghost {
+  position: fixed; left: 0; top: 0; z-index: 9999;
+  transform: translate(-50%, -92%);
+  color: #ffd166; opacity: .92; pointer-events: none;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .45));
+  line-height: 0;
+}
+
+/* =========================================================================
+   v27.0（需求一）：标记文本
+   -------------------------------------------------------------------------
+   · .mt-ghost   —— 拖动文本框卡片时跟随光标的预览（纯视觉，不接收指针事件）
+   · .mt-editor  —— 点击文本框后弹出的文字编辑浮层（textarea + 确认 / 取消）
+   · .mt-toast   —— 轻提示（选中 / 编辑 / 关闭等状态反馈）
+   ========================================================================= */
+.mt-ghost { color: #C9A227; }
+.mt-ico svg { width: calc(40px * var(--ui)); height: calc(26px * var(--ui)); display: block; }
+
+.mt-editor {
+  position: fixed; z-index: 10000; display: none;
+  width: 260px; padding: 10px;
+  background: var(--panel, #fff); border: 1px solid var(--line, #d8dee9); border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .28); color: var(--ink, #1e293b);
+}
+.mt-editor.on { display: block; }
+.mt-editor-ta {
+  width: 100%; height: 76px; resize: vertical; box-sizing: border-box;
+  font-size: calc(13px * var(--ui-fs)); padding: 6px 8px;
+  border: 1px solid var(--line, #d8dee9); border-radius: 8px; background: var(--bg, #fff);
+  color: var(--ink, #1e293b); font-family: inherit;
+}
+.mt-editor-btns { display: flex; gap: 8px; margin-top: 8px; }
+.mt-editor-tip { margin-top: 6px; font-size: calc(10.5px * var(--ui-fs)); color: var(--ink-dim, #64748b); line-height: 1.4; }
+
+.mt-toast {
+  position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%) translateY(12px);
+  z-index: 10001; max-width: 80vw; padding: 8px 14px; border-radius: 999px;
+  background: rgba(15, 23, 42, .92); color: #fff; font-size: calc(12px * var(--ui-fs));
+  opacity: 0; pointer-events: none; transition: opacity .18s ease, transform .18s ease;
+}
+.mt-toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* =========================================================================
+   v25.1（需求⑧）：标记演示 › 球面最短距离
+   -------------------------------------------------------------------------
+   · .gcd-bx     —— 三块「取点方式」面板（点击拾取 / 选取标记点 / 输入经纬度）
+   · .gcd-msg    —— 状态提示行（等待取点 / 已完成 / 重合·对跖警告）
+   · .gcd-res    —— 结果读数（两端点经纬度 / 圆心角 / 球面最短距离）
+   全部沿用既有面板变量（--ui / --ui-fs / --ink / --ink-dim / --line / --accent），
+   不引入新的视觉语言。
+   ========================================================================= */
+.gcd-bx { display: flex; flex-direction: column; }
+.gcd-hint {
+  margin: calc(4px * var(--ui)) 0 0; font-size: calc(10.5px * var(--ui) * var(--ui-fs));
+  line-height: 1.6; color: var(--ink-dim);
+}
+.gcd-hint b { color: var(--accent); font-weight: 700; }
+.gcd-grid {
+  display: grid; grid-template-columns: auto 1fr; align-items: center;
+  gap: calc(5px * var(--ui)) calc(6px * var(--ui));
+  padding: calc(4px * var(--ui)) 0 calc(2px * var(--ui));
+}
+.gcd-grid.gcd-grid3 { grid-template-columns: auto 1fr 1fr; }
+.gcd-lb { font-size: calc(11.5px * var(--ui) * var(--ui-fs)); color: var(--ink-dim); white-space: nowrap; }
+.gcd-hd { font-size: calc(10.5px * var(--ui) * var(--ui-fs)); color: var(--ink-dim); text-align: center; }
+.gcd-grid select, .gcd-grid input[type=number] {
+  width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: calc(7px * var(--ui));
+  padding: calc(3px * var(--ui)) calc(6px * var(--ui)); font-family: inherit;
+  font-size: calc(11.5px * var(--ui) * var(--ui-fs)); background: rgba(var(--panel-rgb, 255, 255, 255), var(--glass-ctl, 0.83)); color: var(--ink);
+}
+.gcd-grid select:disabled { opacity: .55; }
+.gcd-msg {
+  margin: calc(4px * var(--ui)) 0; padding: calc(5px * var(--ui)) calc(8px * var(--ui));
+  border-radius: calc(8px * var(--ui)); background: rgba(37, 99, 235, .07);
+  border-left: calc(3px * var(--ui)) solid var(--accent);
+  font-size: calc(10.5px * var(--ui) * var(--ui-fs)); line-height: 1.55; color: var(--ink-dim);
+}
+.gcd-msg.ok { background: rgba(16, 185, 129, .10); border-left-color: #10B981; color: #047857; }
+.gcd-msg.warn { background: rgba(244, 63, 94, .10); border-left-color: #F43F5E; color: #BE123C; }
+.gcd-res { display: flex; flex-direction: column; gap: calc(3px * var(--ui)); }
+.gcd-res .gcd-r {
+  display: flex; align-items: center; justify-content: space-between; gap: calc(8px * var(--ui));
+  padding: calc(3px * var(--ui)) calc(8px * var(--ui)); border-radius: calc(7px * var(--ui));
+  background: rgba(122, 162, 255, .07);
+}
+.gcd-res .gcd-r > span { font-size: calc(11px * var(--ui) * var(--ui-fs)); color: var(--ink-dim); white-space: nowrap; }
+.gcd-res .gcd-r > b {
+  font-size: calc(11.5px * var(--ui) * var(--ui-fs)); color: var(--ink); font-variant-numeric: tabular-nums;
+}
+.gcd-res .gcd-r.big > b { color: #FF4FA3; font-size: calc(14px * var(--ui) * var(--ui-fs)); }
+.gcd-empty { font-size: calc(11px * var(--ui) * var(--ui-fs)); color: var(--ink-dim); padding: calc(2px * var(--ui)) 0; }
+
+/* =============================================================================
+   v31（需求十七）：UI 风格（色系）与半透明毛玻璃
+   -----------------------------------------------------------------------------
+   · body[data-ui="<id>"] 覆写主题变量：强调色 / 强调渐变 / 色系淡染色 / 边框 / 阴影；
+     不加 data-ui 时即为「原色系」（默认蓝），保证任何情况下都能一键回到原样。
+   · --glass-a（面板底色不透明度）与 --glass-blur（毛玻璃模糊半径）由「设置 › 界面与主题」
+     的滑块实时写入 —— 面板即是半透明毛玻璃效果。
+   ★ v44（需求一）：**面板底色改由 JS 单点写入 `--panel-rgb`**（= 当前明暗模式的底色，
+     浅色模式下再按这里的 `--scheme-tint` 淡染 45%）。此前 `--panel-rgb` 直接写在各色系规则里，
+     与「浅色 / 深色两套模式的面板颜色可自定义」冲突（同一条 CSS 变量两个来源）——
+     现在色系只保留**淡染色 `--scheme-tint`**，底色由 JS 独占，职责不再重叠。
+   ========================================================================== */
+body[data-ui="default"] { --scheme-tint: #ffffff; }
+body[data-ui="teal"] {
+  --scheme-tint: #f0fdfa; --accent: #0d9488; --accent-soft: rgba(13,148,136,.13);
+  --line: rgba(13,148,136,.22); --accent-2: #22d3ee;
+  --shadow: 0 12px 32px rgba(4,47,46,.26), 0 2px 6px rgba(4,47,46,.16);
+}
+body[data-ui="green"] {
+  --scheme-tint: #f3fcf0; --accent: #16a34a; --accent-soft: rgba(22,163,74,.13);
+  --line: rgba(22,163,74,.22); --accent-2: #84cc16;
+  --shadow: 0 12px 32px rgba(20,45,20,.26), 0 2px 6px rgba(20,45,20,.16);
+}
+body[data-ui="amber"] {
+  --scheme-tint: #fffbf0; --accent: #d97706; --accent-soft: rgba(217,119,6,.13);
+  --line: rgba(217,119,6,.22); --accent-2: #f59e0b;
+  --shadow: 0 12px 32px rgba(69,42,4,.26), 0 2px 6px rgba(69,42,4,.16);
+}
+body[data-ui="violet"] {
+  --scheme-tint: #f9f7ff; --accent: #7c3aed; --accent-soft: rgba(124,58,237,.13);
+  --line: rgba(124,58,237,.22); --accent-2: #a855f7;
+  --shadow: 0 12px 32px rgba(42,20,80,.28), 0 2px 6px rgba(42,20,80,.18);
+}
+body[data-ui="rose"] {
+  --scheme-tint: #fff7fa; --accent: #e11d48; --accent-soft: rgba(225,29,72,.13);
+  --line: rgba(225,29,72,.20); --accent-2: #fb7185;
+  --shadow: 0 12px 32px rgba(76,5,25,.26), 0 2px 6px rgba(76,5,25,.16);
+}
+body[data-ui="graphite"] {
+  --scheme-tint: #f6f8fb; --accent: #334155; --accent-soft: rgba(51,65,85,.13);
+  --line: rgba(51,65,85,.20); --accent-2: #64748b;
+  --shadow: 0 12px 32px rgba(15,23,42,.30), 0 2px 6px rgba(15,23,42,.20);
+}
+/* 强调色元素跟随主题（标题竖条 / 高亮行 / 选中态） */
+.seg button.on { background: var(--accent); color: #fff; }
+.card-head h2::before { background: var(--accent-bar); }
+.opt-row.lv1.on, .opt-row.lv2-row.on { color: var(--accent); }
+#svTimeBar .svtb-day, #svMonitor .svmon-row.big, #svTimeTop .svtt-lst {
+  border-color: var(--accent-soft);
+}
+
+/* =============================================================================
+   v31（需求九）：时间面板「年月日 / 时分秒」自定义
+   ========================================================================== */
+.sb-custom .t-custom {
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  margin-top: calc(6px * var(--ui));
+}
+/* v32（需求二）：年月日一行、时分秒一行 —— 每行三格等宽，右对齐的「年/月/日」单位紧贴其输入框 */
+.t-custom.t-c3 { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr auto; gap: calc(4px * var(--ui)); }
+.t-custom.t-c3 input[type=number] { width: 100%; }
+.t-custom input[type=number] {
+  width: calc(52px * var(--ui)); min-width: 40px; text-align: center; font: inherit;
+  font-size: calc(12px * var(--ui) * var(--ui-fs));
+  padding: calc(3px * var(--ui)) calc(4px * var(--ui));
+  border: 1px solid var(--line); border-radius: calc(7px * var(--ui));
+  background: rgba(var(--panel-rgb, 255, 255, 255), var(--glass-ctl, 0.83)); color: var(--ink); font-variant-numeric: tabular-nums;
+}
+.t-custom .tc-u { font-size: calc(11px * var(--ui) * var(--ui-fs)); color: var(--ink-dim); }
+.sb-custom .sb-head .link { margin-left: auto; }
+
+/* =============================================================================
+   v31（需求八）：自转 / 公转 / 综合视图的 5 个悬浮窗
+   （沿用 .card 毛玻璃外观；拖动 / 拉伸 / 折叠 / 关闭 / 位置尺寸记忆由 JS 统一接管）
+   ========================================================================== */
+#mvWins { position: fixed; inset: 0; pointer-events: none; z-index: 12; }
+/* v31（需求八 / 二十二）：拉伸时内容自适应填满 —— 卡片用 flex 纵向布局，
+   画布 flex:1 撑满剩余高度，宽度 100% 跟手；折叠时只剩表头。 */
+.mvwin {
+  display: none; pointer-events: auto; width: 244px; padding: 0 10px 10px;
+  /* ★ v43（需求一·7）：与太阳侧 .svwin 同口径 —— 声明 --pad-x 让表头负 margin 出血铺满整卡宽度 */
+  --pad-x: 10px;
+  min-width: 210px;            /* ★ v33：尺寸下限 —— 任何情况下内容都不越出窗口边界 */
+  min-height: 152px;           /* 表头 40 + 画布下限 86 + 间距 / 内边距 ⇒ 画布永不被压扁溢界 */
+}
+.mvwin.on { display: flex; flex-direction: column; }
+.mvwin.collapsed { min-height: 0; }
+/* ★ v33（悬浮窗尺寸优化）：表头单行不换行 + 标题超长省略号截断 + 卡片级 overflow 兜底 ——
+   旧实现里标题把「折叠 / 关闭」两个胶囊挤出卡片右边界，缩小窗口后按钮直接落在窗口外面。 */
+.mvwin .card-head {
+  flex: none; flex-wrap: nowrap; gap: calc(6px * var(--ui)); overflow: hidden;
+}
+.mvwin .card-head h2 {
+  display: block; flex: 1 1 auto; min-width: 0;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.mvwin .card-head > output { flex: 0 1 auto; min-width: 0; max-width: 46%; }
+.mvwin .card-head .link { flex: none; padding: calc(2px * var(--ui)) calc(7px * var(--ui)); }
+.mvwin .card-body {
+  padding: 0; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
+}
+.mvwin canvas {
+  display: block; width: 100%; flex: 1 1 auto; min-height: 86px; height: 150px;
+  margin-top: 7px; border-radius: calc(9px * var(--ui)); background: #060a14;
+}
+.mvwin .mvwin-foot {
+  flex: none; margin-top: 6px; font-size: calc(10.5px * var(--ui) * var(--ui-fs));
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mvwin.collapsed { padding-bottom: 0; }
+.mvwin.collapsed .card-body { display: none; }
+.mvwin.collapsed .mvwin-foot { display: none; }
+/* v33：3D 缩略窗 —— 窗内拖动旋转 / 滚轮缩放 / 双击复位 */
+.mvwin.mvwin-3d canvas { cursor: grab; }
+.mvwin.mvwin-3d canvas:active { cursor: grabbing; }
+.mvwin.mvwin-3d.mv-dragging { box-shadow: 0 18px 44px rgba(2, 6, 23, .3); }
+/* 未拉伸时按内容自适应：地图窗更宽（标题最长，下限也最大），其余为方形缩略图 */
+#mvWinMap { width: 300px; min-width: 268px; min-height: 170px; }
+#mvWinMap canvas { height: 158px; }
+
+/* ============================ v31（需求八）：主视图演示悬浮窗 ============================
+   5 个悬浮窗（全球昼夜 / 北极 / 南极 / 公转示意 / 直射点回归）统一 look：沿用 .card 毛玻璃，
+   固定定位 + 可拖动标题栏 + 八向抓手拉伸；画布由 flex 撑满内容框 ⇒ 拉伸时自动填满（需求二十二）。
+   进入太阳视运动或沉浸模式时整组隐藏 —— 让主视图只留下 3D 画面，互不干扰。 */
+.mvwin { position: fixed; }
+.mvwin .card-head { cursor: move; user-select: none; }
+.mv-grip { position: absolute; z-index: 6; touch-action: none; }
+.mv-grip.n { left: 8px; right: 8px; top: -3px; height: 7px; cursor: ns-resize; }
+.mv-grip.s { left: 8px; right: 8px; bottom: -3px; height: 7px; cursor: ns-resize; }
+.mv-grip.w { top: 8px; bottom: 8px; left: -3px; width: 7px; cursor: ew-resize; }
+.mv-grip.e { top: 8px; bottom: 8px; right: -3px; width: 7px; cursor: ew-resize; }
+.mv-grip.nw { left: -3px; top: -3px; width: 13px; height: 13px; cursor: nwse-resize; }
+.mv-grip.ne { right: -3px; top: -3px; width: 13px; height: 13px; cursor: nesw-resize; }
+.mv-grip.sw { left: -3px; bottom: -3px; width: 13px; height: 13px; cursor: nesw-resize; }
+.mv-grip.se { right: -3px; bottom: -3px; width: 13px; height: 13px; cursor: nwse-resize; }
+.mvwin.sv-resizing { box-shadow: 0 18px 44px rgba(2, 6, 23, .30); }
+.mvwin.sv-active { z-index: 40; }
+
+/* ★ v39（需求四·1）：主模块面板（设置 / 时间 / 观测点信息）与底部控制条支持适度拉伸 ——
+   与太阳侧浮窗同一套 8 向抓手，内容随窗口尺寸自适应（正文区已由各自 CSS 自适应）。 */
+.pm-grip { position: absolute; z-index: 7; touch-action: none; }
+/* ★ v40：浮层（.opt-fly）内部的抓手不能越过浮层边界被外层面板误用 ——
+   抓手始终是「宿主元素的直接子元素」，这里给直接子选择器加一条更明确的定位兜底。 */
+:is(#optsCard, #timeCard, #geoInfo, .opt-fly, .svwin, #svOptsCard, #svTimeTop, #svTimeBar, #svMonitor) > .pm-grip { position: absolute; }
+.pm-grip.n { left: 10px; right: 10px; top: -2px; height: 6px; cursor: ns-resize; }
+.pm-grip.s { left: 10px; right: 10px; bottom: -2px; height: 6px; cursor: ns-resize; }
+.pm-grip.w { top: 10px; bottom: 10px; left: -2px; width: 6px; cursor: ew-resize; }
+.pm-grip.e { top: 10px; bottom: 10px; right: -2px; width: 6px; cursor: ew-resize; }
+.pm-grip.nw { left: -2px; top: -2px; width: 13px; height: 13px; cursor: nwse-resize; }
+.pm-grip.ne { right: -2px; top: -2px; width: 13px; height: 13px; cursor: nesw-resize; }
+.pm-grip.sw { left: -2px; bottom: -2px; width: 13px; height: 13px; cursor: nesw-resize; }
+.pm-grip.se { right: -2px; bottom: -2px; width: 15px; height: 15px; cursor: nwse-resize;
+  background: linear-gradient(135deg, transparent 48%, var(--line) 48%, var(--line) 58%, transparent 58%,
+              transparent 68%, var(--line) 68%, var(--line) 78%, transparent 78%); opacity: .7; }
+.pm-resizing { box-shadow: 0 18px 44px rgba(2, 6, 23, .30); }
+/* 面板可拉伸：正文区随高度自适应滚动 */
+#optsCard .card-body, #timeCard .card-body, #geoInfo .card-body { overflow: auto; }
+.mvwin canvas { touch-action: none; }
+/* 太阳视运动接管画布 / 沉浸模式 ⇒ 主视图悬浮窗整组让位 */
+body[data-view="sun"] #mvWins,
+body.immersive #mvWins { display: none !important; }
+
+/* ★ v34：演示悬浮窗背景必须**不透明** ——
+   旧实现沿用 .card 的半透明毛玻璃（--glass-a≈0.88），多个悬浮窗互相叠放时能透出
+   下层卡片 / 3D 画面（用户截图反馈）。这里把两个悬浮窗家族（主视图 .mvwin、
+   太阳视运动 .svwin）连同其表头 / 内部控件一律改为纯色不透明底，并关掉毛玻璃；
+   色系仍跟随 --panel-rgb（UI 风格切换时一并变色）。 */
+.mvwin, .svwin {
+  /* ★ 本批次（需求二）：悬浮窗跟随「面板背景不透明度」滑块，不再强制不透明 */
+  background: var(--panel);
+  backdrop-filter: blur(var(--glass-blur, 0px)); -webkit-backdrop-filter: blur(var(--glass-blur, 0px));
+}
+.mvwin > .card-head, .svwin > .card-head {
+  background:
+    radial-gradient(140% 190% at 0% 0%, rgba(37, 99, 235, .10), rgba(37, 99, 235, 0) 60%),
+    rgba(var(--panel-rgb, 255, 255, 255), var(--glass-head, 0.97));
+}
+.mvwin .mvwin-foot, .svwin .svwin-foot { background: transparent; }
+
+/* =============================================================================
+   ★ v44（需求一）：深色模式（黑底白字、面板黑色半透明）
+   -----------------------------------------------------------------------------
+   面板底色 / 面板文字色由 JS **单点写入**（--panel-rgb + --ink / --ink-dim / --ink-faint）：
+     · 浅色模式 → 面板浅蓝白半透明 + 深色文字；
+     · 深色模式 → 面板黑色半透明  + 浅色文字。
+   .card / .card-head / .opt-fly / .tbm2 / .btn / .seg / input / select / .mvwin / .svwin
+   本来就引用 --panel-rgb 与 --ink，因此**两种模式下自动跟随**，无需逐个覆写。
+   本块只补历史上写死了「近白色」的那几个元素（标题栏渐变 / 节气小卡 / 折叠按钮 /
+   取点提示关闭按钮 / 昼长读数 / 边框色），保证深色模式下没有刺眼的白色块。
+   ========================================================================== */
+body[data-mode="dark"] {
+  /* 边框：浅色模式的 rgba(15,23,42,.10) 在深底上完全看不见 —— 换成白色低透明 */
+  --line: rgba(255, 255, 255, .16);
+  --shadow: 0 12px 32px rgba(0, 0, 0, .55), 0 2px 6px rgba(0, 0, 0, .40);
+}
+body[data-mode="dark"] #titleBar {
+  background:
+    radial-gradient(140% 260% at 6% -60%, rgba(37, 99, 235, .40), rgba(37, 99, 235, 0) 62%),
+    linear-gradient(90deg, rgba(9, 14, 24, .96) 0%, rgba(16, 24, 40, .94) 46%, rgba(9, 14, 24, .96) 100%);
+  border-bottom-color: rgba(255, 255, 255, .10);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .10), 0 6px 20px rgba(0, 0, 0, .55);
+}
+body[data-mode="dark"] #titleBar::before {
+  background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,.18) 20%, rgba(255,255,255,.18) 80%, rgba(255,255,255,0));
+}
+/* 主名称的主题渐变在深底上要整体提亮，否则深蓝字糊在深蓝底上 */
+body[data-mode="dark"] .tb-text h1 .tb-brand {
+  background: linear-gradient(120deg, #93c5fd 0%, #60a5fa 42%, #7dd3fc 78%, #67e8f9 100%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: #93c5fd;
+}
+body[data-mode="dark"] .term { background: rgba(255, 255, 255, .06); }
+/* 卡片表头的两条写死「浅色」装饰（分隔线 / 顶部高光）在深底上会变成刺眼白线 */
+body[data-mode="dark"] .card > .card-head {
+  border-bottom-color: rgba(255, 255, 255, .10);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06);
+}
+body[data-mode="dark"] .cb-toggle { background: rgba(255, 255, 255, .08); }
+body[data-mode="dark"] .cb-toggle:hover { color: #93c5fd; }
+body[data-mode="dark"] #pickTip .pt-x { background: rgba(255, 255, 255, .12); color: #bfdbfe; }
+body[data-mode="dark"] #pickTip .pt-x:hover { background: rgba(255, 255, 255, .24); }
+body[data-mode="dark"] #geoInfo .pi-big { color: #fbbf24; }
+/* 滚动条在深色模式下换深槽浅柄（浅色模式保持系统默认） */
+body[data-mode="dark"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+body[data-mode="dark"] ::-webkit-scrollbar-track { background: rgba(255, 255, 255, .04); }
+body[data-mode="dark"] ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .22); border-radius: 999px; }
+body[data-mode="dark"] ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, .34); }
+/* ★ 本批次修复 #269（深色模式文字对比度）：下列元素把文字色**写死**成深色
+   （深蓝 / 深板岩 / 深青 / 深红），在近黑面板（--panel-rgb → #0a1018）与深色标题栏上
+   等于隐形 —— 深色模式统一提亮到同色系的高亮档，维持「深底 + 亮字」的可读对比。 */
+body[data-mode="dark"] .fly-head { color: #93c5fd; }            /* 原 #1e3a8a 深蓝（二级浮层标题） */
+body[data-mode="dark"] .tb-text h1 .tb-sub { color: #cbd5e1; }  /* 原 #334155 深板岩 */
+body[data-mode="dark"] .tb-text h1 .tb-dash { color: #94a3b8; } /* 原 #64748b 中灰 */
+body[data-mode="dark"] .geo-stat.ok { color: #6ee7b7; }         /* 原 #0f766e 深青 */
+body[data-mode="dark"] .geo-stat.bad { color: #fca5a5; }        /* 原 #b91c1c 深红 */
+body[data-mode="dark"] .cb-toggle:hover,
+body[data-mode="dark"] .cb-grip:hover,
+body[data-mode="dark"] .nd-h:hover { color: #93c5fd; } /* 原 #1d4ed8 深蓝 hover */
+body[data-mode="dark"] .nd-h[role="button"]:focus-visible { color: #93c5fd; }
+
+/* =============================================================================
+   ★ v44（需求 1 / 2 / 3）：可折叠面板的**统一折叠口径** + 尺寸与布局约束
+   -----------------------------------------------------------------------------
+   ① 圆角：折叠后表头四角与卡片同值（旧为「上圆下直」—— 折叠态下沿两个直角与上沿
+      两个圆角不一致，展开 / 收起切换时也生硬）；
+   ② 高度：折叠 = 卡片真的收缩成「只有表头」的紧凑块 —— 不再受拉伸留下的 inline
+      height 影响（旧实现只把正文 display:none，卡片仍占着原高度）；
+   ③ 动画：正文 max-height + 卡片 padding + 表头圆角一并过渡，展开 / 收起平滑；
+   ④ 约束：每类面板声明「内容最小尺寸」与「宽高比区间」，拖动 / 拉伸时一律夹取到
+      可见区域内，并由 JS 消解面板之间的重叠（见 app.js 的 window.__panelFit）。
+   ========================================================================== */
+
+/* ---- ④ 每类面板的内容最小尺寸（CSS 兜底；JS 会按实测内容覆写 --pm-min-w/h） ---- */
+#svOptsCard { min-width: calc(288px * var(--ui)); min-height: calc(150px * var(--ui)); }
+#svTimeTop  { min-width: calc(312px * var(--ui)); min-height: calc(160px * var(--ui)); }
+#svTimeBar  { min-width: calc(420px * var(--ui)); min-height: calc(120px * var(--ui)); }
+#svMonitor  { min-width: calc(250px * var(--ui)); min-height: calc(130px * var(--ui)); }
+.svwin      { min-width: calc(190px * var(--ui)); min-height: calc(168px * var(--ui)); }
+#optsCard   { min-width: calc(252px * var(--ui)); min-height: calc(140px * var(--ui)); }
+#timeCard   { min-width: calc(260px * var(--ui)); min-height: calc(130px * var(--ui)); }
+#geoInfo    { min-width: calc(220px * var(--ui)); min-height: calc(110px * var(--ui)); }
+
+/* ---- ①②③ 折叠态：卡片 + 表头圆角 + 正文 max-height 一并过渡 ---- */
+:is(#svOptsCard, #svTimeTop, #svTimeBar, #svMonitor, .svwin,
+    #optsCard, #timeCard, #geoInfo) {
+  transition: max-height .26s cubic-bezier(.33, 0, .2, 1),
+              border-radius .26s ease, padding .26s ease, box-shadow .22s ease;
+}
+:is(#svOptsCard, #svTimeTop, #svTimeBar, #svMonitor, .svwin,
+    #optsCard, #timeCard, #geoInfo) > .card-head {
+  transition: border-radius .26s ease, background .18s ease, border-color .26s ease;
+}
+/* 正文折叠动画：由 JS 写 inline 的 max-height（展开实测值 ↔ 0），这里只声明过渡 */
+:is(#svOptsCard, #svTimeTop, #svTimeBar, #svMonitor, .svwin,
+    #optsCard, #timeCard, #geoInfo) > .card-body,
+:is(#svTimeTop) > .svtt-body,
+:is(#svTimeBar) > .svtb-body,
+:is(#svMonitor) > .svmon-body {
+  transition: max-height .26s cubic-bezier(.33, 0, .2, 1), opacity .22s ease;
+}
+/* 折叠态：卡片只留表头 —— 清掉拉伸高度、清掉最小尺寸，四角圆角一致 */
+:is(#svOptsCard, #svTimeTop, #svTimeBar, #svMonitor, .svwin).collapsed {
+  height: auto !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  max-height: var(--fold-h, calc(var(--head-h) + 8px));
+  overflow: hidden;
+  padding-bottom: 0;
+}
+:is(#svOptsCard, #svTimeTop, #svTimeBar, #svMonitor, .svwin).collapsed > .card-head {
+  border-radius: calc(var(--r) - 1px);
+  border-bottom-color: transparent;
+  box-shadow: none;
+}
+/* 折叠态宽度收缩到「表头内容实际所需」（与主模块 #optsCard.collapsed / #timeCard.min
+   的胶囊口径一致）；正文已 display:none ⇒ 收缩宽度只由表头决定，面板才真的紧凑。 */
+:is(#svOptsCard, #svTimeTop, #svMonitor, .svwin).collapsed {
+  width: auto !important;
+  max-width: calc(100vw - 24px);
+}
+.svwin.collapsed { min-width: 0; }
+:is(#svOptsCard, #svTimeTop, #svTimeBar, #svMonitor, .svwin).collapsed > .card-body,
+:is(#svTimeTop).collapsed > .svtt-body,
+:is(#svTimeBar).collapsed > .svtb-body,
+:is(#svMonitor).collapsed > .svmon-body {
+  /* 无 JS 兜底：折叠态正文高度归零（JS 负责写入展开实测值以获得平滑过渡） */
+  max-height: 0;
+  padding-top: 0; padding-bottom: 0;
+  overflow: hidden;
+}
+/* 折叠 / 展开动画期间的兜底：正文被裁掉，不让方角 / 半截内容露在表头之外 */
+.card.pm-folding { overflow: hidden; }
+
+/* ---- ④ 拖动 / 拉伸期间：拖拽中的面板置顶，避免被同层其它面板压住 ---- */
+.card.pm-dragging { z-index: 60; }
+
+/* =============================================================================
+   ★ v44（需求 4）：标题栏左上角「图标 / 大标题 / 小标题 / 作者」的统一对齐
+   -----------------------------------------------------------------------------
+   旧写法 `h1 { align-items: baseline }`：23px 的主名与 14.5px 的破折号 / 副名虽然
+   基线对齐，但视觉重心相差 3~3.5px（实测 dashCy 39.16 / subCy 39.66，而
+   brandCy 与作者徽标、地球徽标都是 36.16）—— 看上去「副标题往下掉了一截」。
+   现统一为**同一条垂直中心线**：地球徽标 / 主名 / 破折号 / 副名 / 作者徽标
+   五者的几何中心一致；三者行高也用同一口径（1.1），避免行框本身把中心带偏。
+   各面板表头的间距与基线本来就同规格（.card-head：gap 9px·ui、padding --hy --hx、
+   h2 13px·ui·ui-fs、line-height 1.25），这里补一条 `.svwin` 的表头字号对齐
+   （旧为 12.5px，与其它面板的 13px 不一致）。
+   ========================================================================== */
+.tb-text h1 { align-items: center; }
+.tb-text h1 .tb-brand,
+.tb-text h1 .tb-dash,
+.tb-text h1 .tb-sub { line-height: 1.1; }
+.tb-line { align-items: center; }
+/* 注：`.svwin .card-head h2` 的字号统一写在 sunview.css（同优先级下后加载者生效）。 */
+
+/* =============================================================================
+   ★ v59（需求 1）：所有面板 / 窗口 / 悬浮窗右上角的「折叠 / 隐藏」按钮统一为极简图标
+   -----------------------------------------------------------------------------
+   折叠按钮 → 一条横线（—）；隐藏 / 关闭按钮 → 一个叉（×）。
+   旧版是「胶囊底 + 折线箭头（.link::before）+ 文字（折叠 / 收起 / 关闭）」，本块把
+   胶囊与箭头整体去掉，只留图标，与参考图一致。
+
+   实现要点：**DOM 文本保持不变**（仍是「折叠 / 收起 / 展开 / 关闭」）——
+   sunview.js 的 makeFloatPanel 按按钮文本（/折叠|收起/、/关闭/）分派折叠 / 关闭行为，
+   若把文本改成符号，分派逻辑会失效。这里只用 `font-size: 0` 把文字视觉隐藏，
+   再由 ::before / ::after 画出图标；JS 后续改文本（收起 ↔ 展开）也不会破坏图标。
+
+   颜色一律取 currentColor：浅色表头（各面板 / .svwin 悬浮窗）走 --ink-dim，
+   深色表头（综合视图窗格 #svComboUI .svc-cell）由该处既有的 color 规则接管，
+   两种底色下都清晰可见。
+   ========================================================================== */
+.card-head .link[data-ic] {
+  flex: none;
+  width: calc(22px * var(--ui));
+  height: calc(22px * var(--ui));
+  padding: 0 !important;                       /* 覆盖 .link / .mvwin .link 的胶囊内边距 */
+  border: 0 !important;                        /* 去掉胶囊描边（含折叠态的中性描边） */
+  background: none !important;                 /* 去掉胶囊底色（含折叠态的浅灰底） */
+  border-radius: calc(7px * var(--ui));
+  font-size: 0 !important;                     /* 视觉隐藏文字，保留文本供 JS 分派 / 无障碍 */
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--ink-dim);
+  transition: background .15s ease, color .15s ease;
+}
+/* 折叠 + 关闭并排：关闭按钮不再吃 auto 外边距，两个图标贴齐在表头右侧 */
+.card-head .link[data-ic="close"] { margin-left: 0; }
+.card-head .link[data-ic]:hover { background: rgba(37, 99, 235, .12) !important; color: #1d4ed8; }
+/* 深色表头（综合视图窗格）hover：白色微透底 + 白字 */
+#svComboUI .svc-cell .card-head .link[data-ic]:hover { background: rgba(255, 255, 255, .18) !important; }
+
+/* —— 折叠：展开态「一横线」/ 折叠态「V 形小箭头」（★ v61 需求5） —— */
+.card-head .link[data-ic="fold"]::before {
+  content: "";
+  width: calc(13px * var(--ui));
+  height: calc(2px * var(--ui));
+  border: 0 !important;
+  border-radius: calc(1px * var(--ui));
+  background: currentColor;
+  /* ★ v61：不再用 !important 压折叠态的箭头旋转 —— 改由下方折叠态规则显式给出「V」形 */
+  transform: none;
+  transition: transform .18s ease, width .18s ease, height .18s ease, border-radius .18s ease;
+}
+.card-head .link[data-ic="fold"]::after { content: none; }
+/* 折叠态：横线 → V 形小箭头（9×9 的两条边旋转 45°）。
+   用 :is() 取参数中**最高**的特异性（id 级），从而稳压上方 `#optsCard.collapsed …`
+   那条 id 规则与这里的基础横线规则；覆盖范围 = 全部可折叠面板 / 悬浮窗 / 综合视图窗格。 */
+:is(#optsCard.collapsed, #timeCard.min, #geoInfo.gi-min,
+    #svOptsCard.collapsed, #svTimeTop.collapsed, #svTimeBar.collapsed,
+    #svMonitor.collapsed, .svwin.collapsed, #svComboUI .svc-cell.collapsed)
+  .card-head .link[data-ic="fold"]::before {
+  width: calc(9px * var(--ui));
+  height: calc(9px * var(--ui));
+  background: none;
+  border-right: calc(2px * var(--ui)) solid currentColor !important;
+  border-bottom: calc(2px * var(--ui)) solid currentColor !important;
+  border-radius: 0;
+  /* ★ v61 修正：加 !important —— 与上方基础横线规则的 `transform: none` 同属性对撞时，
+     特异性已足够（(1,5,0) > (0,3,0)），但实测在部分环境下旋转未生效，这里显式锁死，
+     保证折叠态一定是「V」而不是「—」。 */
+  transform: rotate(45deg) translate(calc(-1px * var(--ui)), calc(-1px * var(--ui))) !important;
+}
+
+/* —— 隐藏 / 关闭：一个叉 —— */
+.card-head .link[data-ic="close"]::before,
+.card-head .link[data-ic="close"]::after {
+  content: "";
+  position: absolute; left: 50%; top: 50%;
+  width: calc(13px * var(--ui));
+  height: calc(1.8px * var(--ui));
+  border: 0 !important;
+  border-radius: calc(1px * var(--ui));
+  background: currentColor;
+}
+.card-head .link[data-ic="close"]::before { transform: translate(-50%, -50%) rotate(45deg); }
+.card-head .link[data-ic="close"]::after { transform: translate(-50%, -50%) rotate(-45deg); }
+
+/* —— 底部控制条的「收起 / 展开」同样改为一条横线 —— */
+#controlBar .cb-toggle {
+  width: calc(26px * var(--ui));
+  height: calc(22px * var(--ui));
+  padding: 0 !important;                       /* 覆盖 #controlBar.min .cb-toggle 的胶囊内边距 */
+  border: 0 !important;
+  background: none !important;
+  font-size: 0 !important;                     /* 隐藏「收起 / 展开」文本（JS 仍会改写它） */
+  color: var(--ink-dim);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+#controlBar .cb-toggle .arr { display: none; }  /* 隐藏旧的 ▾ 箭头 */
+#controlBar .cb-toggle::before {
+  content: "";
+  width: calc(13px * var(--ui));
+  height: calc(2px * var(--ui));
+  border-radius: calc(1px * var(--ui));
+  background: currentColor;
+}
+#controlBar .cb-toggle:hover { color: #1d4ed8; }
+
+/* =============================================================================
+   ★ v59（需求 2）：二分二至节气小卡片的日期精确到时分秒后的防换行适配
+   -----------------------------------------------------------------------------
+   日期行由「3/20」变为「3/20 11:06:26」，最长的一格是冬至「12/21 17:20:26」（14 字符）。
+   主模块 #timeCard 与太阳视运动 #svTimeTop 宽度同为 336px·ui，左右内边距各 16px·ui，
+   4 列 + 3 道列间距后的单列可用宽度约 69px·ui：
+     · 旧版 10px 字号下该串约 73px → 冬至折成两行（参考图即为该现象）；
+     · 现降为 9px 字号、列间距 6px → 4px、左右内边距 2px → 1px，并强制 nowrap，
+       该串约 59px，留出约 10% 余量，稳定单行不折行。
+   ★ 全部尺寸都按 var(--ui) 成比例缩放（含字距），因此该余量在 1366 / 1920 / 4K
+     各分辨率下比例一致，不会出现「小屏刚好、大屏溢出」。
+   ========================================================================== */
+.terms { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: calc(4px * var(--ui)); }
+.term {
+  min-width: 0;
+  padding-left: calc(1px * var(--ui));
+  padding-right: calc(1px * var(--ui));
+}
+.term .d {
+  font-size: calc(9px * var(--ui) * var(--ui-fs));
+  margin-top: calc(1px * var(--ui));
+  white-space: nowrap;
+  letter-spacing: calc(-0.2px * var(--ui));
+}
