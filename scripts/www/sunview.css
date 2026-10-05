@@ -1,0 +1,1074 @@
+/* =============================================================================
+   sunview.css —— 「太阳视运动」模块样式（v30 新增）
+   -----------------------------------------------------------------------------
+   设计约束（对应《开发需求说明书》1.3 全局统一约束）：
+     · 所有窗口沿用自转 / 公转模块的 .card 毛玻璃风格（圆角 + 半透明 + 柔和阴影 +
+       同款标题栏与角标），不允许裸矩形面板；
+     · 所有浮窗支持 拖动（标题栏）/ 边缘与四角拉伸 / 折叠 / 关闭 / 位置与尺寸记忆 /
+       点击置顶（层级管理）；
+     · 文字注释、控件、滑块、弹窗按钮顺序（重置 → 取消 → 应用）与主模块一致；
+     · 视图切换 0.2s 平滑过渡（由 JS 写入 .sv-fade / transition 实现）。
+   ========================================================================== */
+
+/* ★ 修复 #17：全局键盘焦点可见反馈 —— 此前本文件只有 `.gs-sw input[type="checkbox"]:focus-visible`
+   一条局部规则，其余可聚焦控件（按钮 / 滑块 / select / 菜单项 / 窗格）用 Tab 键聚焦时
+   没有任何视觉提示，键盘用户无法判断焦点位置。用 `:focus-visible`（仅键盘触发，鼠标点击不产生
+   焦点环）统一补一条，配色取与既有规则一致的亮蓝 #7cc4ff。 */
+:focus-visible { outline: 2px solid #7cc4ff; outline-offset: 2px; }
+
+/* ---------- 画布：太阳视运动使用自己的渲染画布，与主模块 #gl 互为显隐 ---------- */
+#svCanvas {
+  position: fixed; inset: 0; width: 100%; height: 100%; display: none;
+  touch-action: none; cursor: grab; z-index: 1;
+}
+body[data-view="sun"] #svCanvas { display: block; }
+#svCanvas.grabbing { cursor: grabbing; }
+
+/* ★ 本批次（需求一）标题栏**尺寸口径与地球运动视图完全一致** ——
+   逐项对齐 style.css 的 `.pane .pane-h` / `.pane .pane-h span`：
+   高度 30px×--ui、内边距 0 10px×--ui、字号 15px×--ui×--ui-fs、字重 --ui-fw-m(600)、
+   字距 .4px、主色 #eaf2ff、左侧 9px 主题色竖条（2.5px×12px，#60a5fa→#22d3ee）。
+   纵向位置由 JS 写成「标题栏实际高 + 间隙」，与地球侧窗格顶边 `TITLE_H + COMBO_PAD`
+   取同一口径（沉浸模式下标题栏高 0，标题栏随之上移），两者始终对齐。 */
+/* ★ 本批次（需求二）标题栏**铺满左右** —— 与地球运动「地球侧视图」窗格完全一致：
+   地球侧单视图的 .pane 实测 left=0 / width=100%（铺满视口），其 .pane-h 在 1px 边框内侧
+   （left=1 / width=视口−2）。这里照抄同一套几何：left/right 各 1px、width:auto（不设 max-content），
+   上圆角 + 1px 亮色描边 + 下分隔线，于是两条标题栏左右都贯通、观感一致。 */
+/* ★ 本批次（需求三）**窗口顶部标题栏** ——
+   地球侧窗格是「四边描边 + 圆角 + 顶部 .pane-h」，太阳侧现在补齐同一套：
+     #svFrame  画四周边框（只画边，不挡画布）
+     #svViewHead 骑在边框上沿、位于窗口顶部内侧
+   左右各内缩 1px、圆角与上边框同形 ⇒ 标题栏与边框视觉上连成一个窗口。 */
+#svViewHead {
+  position: fixed;
+  left: 1px; right: 1px; top: 66px; width: auto; margin: 0;
+  /* ★ 本批次（需求三）：标题栏必须**在面板悬浮窗之下** —— 悬浮窗 zTop 从 12 起、
+     .card.sv-active 为 40，此前标题栏 z-index:50 反而压住它们。降到 3：
+     高于画布(1)、低于 #panes(5)/comboUI(6)/各悬浮窗(12+)，于是悬浮窗可自由覆盖标题栏。 */
+  z-index: 3;
+  /* ★ v60（需求3）：改为**左对齐**（与地球运动单视图「地球侧视」表头一致），
+     不再居中；提示文字随之由「绝对定位到右端」改为标题右侧内联（见下方 .sv-vh-hint）。 */
+  display: none; align-items: center; justify-content: flex-start; gap: calc(10px * var(--ui));
+  height: calc(30px * var(--ui));
+  padding: 0 calc(10px * var(--ui));
+  box-sizing: border-box;
+  /* ★ v60（需求3）：与地球运动单视图窗格表头 `.pane-h` **同一套配色配方** ——
+     「半透明亮色渐变 叠在不透明纯黑底上」⇒ 顶部 rgb(41,41,41) → 底部 rgb(13,13,13)，
+     即用户要求的**灰黑渐变**。既保留 v53「纯黑底保证浅色底图上的可读性」的意图，
+     又不再是死板的一整块纯黑；同一配方也用在太阳侧综合视图窗格表头，两处观感一致。 */
+  background: linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .05)), #000;
+  border: 1px solid rgba(255, 255, 255, .22);
+  border-bottom: 1px solid rgba(255, 255, 255, .12);
+  border-radius: calc(11px * var(--ui)) calc(11px * var(--ui)) 0 0;
+  box-shadow: 0 6px 18px rgba(2, 6, 23, .34);
+  pointer-events: none; user-select: none; white-space: nowrap;
+}
+body[data-view="sun"] #svViewHead { display: flex; }
+/* ★ v61（需求2）：单视图（地面 / 天球等）标题栏**上方**那条间隙改纯黑 ——
+   窗口上沿 = 菜单栏下沿 + 8px（见 syncSvViewHead；与地球侧 `TITLE_H + 8` 同口径），
+   这 8px 原先直接透出 3D 场景的天空 / 星点（用户截图里的蓝边与白点）。
+   这里用一个紧贴标题栏上沿的纯黑条把它盖住：标题栏上方「不显示任何东西」。
+   高度取 9px（比 8px 间隙多 1px 与菜单栏下沿重叠，避免出现 1px 亮缝）；
+   标题栏本身的灰黑渐变保持不变。沉浸模式（菜单栏隐藏）下 JS 把 topPx 归 0，
+   本条会落到视口上沿之外，不可见。 */
+#svViewHead::before {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 100%;
+  height: 9px; background: #000; pointer-events: none;
+}
+
+/* ---- 完整窗口边框（.pane 同款语言）----
+   纯边框覆盖层：background 只有极淡的一层渐变（与 .pane 一致），
+   主体 pointer-events:none ⇒ 画布的旋转 / 缩放 / 双击测量完全不受影响。 */
+#svFrame {
+  position: fixed;
+  left: 0; right: 0; bottom: 0; top: 66px; width: auto; margin: 0;
+  /* 高于画布(1)、低于 #svViewHead 同层靠 z-index 排列；必须低于各悬浮窗(10+)
+     与 .card.sv-active(40)，否则窗口边框会盖住面板。 */
+  z-index: 2;
+  display: none;
+  box-sizing: border-box;
+  border: 1px solid var(--sv-frame-line, rgba(255, 255, 255, .22));
+  border-radius: calc(12px * var(--ui));
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .18);
+  background: linear-gradient(180deg, rgba(255, 255, 255, .05), rgba(255, 255, 255, 0));
+  pointer-events: none; user-select: none;
+}
+body[data-view="sun"] #svFrame { display: block; }
+/* 综合视图各窗格自带 .svc-cell 描边 + 标题条，让位避免双层框 */
+body[data-view="sun"].sv-combo #svFrame { display: none; }
+/* 沉浸模式：与地球侧一致（隐藏所有窗口框与标题栏，只看画面） */
+body.immersive #svFrame { display: none !important; }
+body.immersive #svViewHead { display: none !important; }
+/* 综合视图自带每个窗格的标题条，单视图标题栏让位 */
+body[data-view="sun"].sv-combo #svViewHead { display: none; }
+/* ★ v60（需求 3）：标题**左对齐**（与地球运动单视图「地球侧视」表头一致）；
+   尺寸 / 字重 / 主题竖条仍与综合视图窗格标题（#svComboUI .svc-cell .card-head h2）对齐：
+   15px·ui / 加粗 / #eaf2ff / 竖条 2.5×12·ui。
+   右侧提示文字由「绝对定位在窗口右端」改为**内联在标题右侧**（与地球侧 `.pane .p-hint`
+   同构），因此它自然跟在标题之后，而不是被推到窗口最右。 */
+#svViewHead .sv-vh-t {
+  position: relative; padding-left: calc(9px * var(--ui));
+  font-size: calc(15px * var(--ui) * var(--ui-fs));
+  font-weight: var(--ui-fw-b, 700);
+  color: #eaf2ff; letter-spacing: .5px;
+}
+/* 与地球侧 .pane-h span::before 同款主题色竖条 */
+#svViewHead .sv-vh-t::before {
+  content: ""; position: absolute; left: 0; top: 50%;
+  transform: translateY(-50%);
+  width: 2.5px; height: calc(12px * var(--ui)); border-radius: 999px;
+  background: linear-gradient(180deg, #60a5fa, #22d3ee);
+}
+#svViewHead .sv-vh-hint {
+  /* ★ v60（需求3）：与地球侧 `.pane .p-hint` 同构 —— 内联于标题之后，
+     margin-left 拉开 10·ui 间距；不再绝对定位到窗口右端。 */
+  position: static; margin-left: calc(10px * var(--ui));
+  font-style: normal; font-size: calc(11px * var(--ui) * var(--ui-fs));
+  font-weight: var(--ui-fw, 400);
+  color: rgba(226, 240, 255, .62); letter-spacing: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+
+body[data-view="sun"] #gl { display: none; }
+/* 太阳视运动视图下，主模块的窗格框 / 底栏 / 时间面板 / 显示设置 / 综合视图一律让位 */
+body[data-view="sun"] #panes,
+body[data-view="sun"] #comboUI,
+body[data-view="sun"] #controlBar,
+body[data-view="sun"] #timeCard,
+body[data-view="sun"] #optsCard,
+body[data-view="sun"] #geoInfo,
+body[data-view="sun"] #pickTip,
+body[data-view="sun"] .splitter { display: none !important; }
+/* 太阳视运动专属面板：默认全部隐藏，进入该视图后按各自开关显示 */
+.sv-only { display: none; }
+body[data-view="sun"] .sv-only.sv-on { display: block; }
+/* ★ v53（需求一·1）：太阳侧面板 / 悬浮窗在**综合视图**里同样浮在窗格之上。
+   层级：#svComboUI 5  <  .card 10  <  运行时拖拽置顶 zTop 12+  <  拖拽中 60。
+   这里显式写一遍，是为了让该约定不依赖 style.css 里 .card 的 z-index 数值，
+   将来调整主模块层级时不会连带把太阳侧面板压到窗格下面。 */
+body[data-view="sun"] .sv-only.sv-on,
+body[data-view="sun"] .svwin.sv-only.sv-on { z-index: 10; }
+
+/* ★ v40（需求六）：#segSunView 已并入总菜单「太阳视运动」下拉（class="tbm-drop"）。
+   旧规则 `#segSunView{display:none}` 用 id 选择器（特异性高于 `.tbm-grp.open .tbm-drop`），
+   会把下拉**永久压成 display:none**，导致太阳视运动视图根本点不开 —— 这是本轮的头号 bug。
+   改为：不再单独控制，完全交给 `.tbm-grp.open .tbm-drop` 规则（display:flex）。
+   仅保留沉浸模式下总菜单整体隐藏的兜底（由 body.immersive #titleBar 规则处理），此处删除。 */
+#segSunView { }   /* 占位：明确不再设 display，交由 .tbm-grp.open 控制 */
+body[data-view="sun"].immersive #segSunView { display: none; }
+
+/* v31（需求四）：沉浸模式隐藏太阳视运动的**所有**面板与覆盖层，
+   与自转 / 公转 / 综合视图完全一致（主模块的 body.immersive 规则在 style.css）。
+   仅保留第一人称「退出第一视角」与「退出室内」两个按钮，避免用户被困在场景里。 */
+body.immersive #svOptsCard,
+body.immersive #svTimeTop,
+body.immersive #svTimeBar,
+body.immersive #svMonitor,
+body.immersive .svwin,
+body.immersive #mvWins,
+body.immersive #svObjMenu,
+body.immersive #svDirMarks,
+body.immersive #svModalHost,
+body.immersive #svFpHud .sv-badge,
+body.immersive #svFpHud #svCompass,
+body.immersive #svFpHud .sv-fpkeys,
+body.immersive #svFpHud #svSunflower,
+body.immersive #svToast { display: none !important; }
+
+/* ---------- 视图切换过渡（0.2 秒，需求 1.3.2） ---------- */
+.sv-fade { transition: opacity .2s ease; }
+.sv-hidden { opacity: 0 !important; pointer-events: none !important; }
+
+/* ---------- 面板通用：折叠 / 拉伸 ---------- */
+/* ★ v43（需求一·7）：**每个带表头的面板都必须声明 --pad-x**（= 卡片自身的水平内边距），
+   否则 `.card > .card-head` 的 `margin: 0 calc(-1 * var(--pad-x, 0px))` 抵消量为 0，
+   表头会浮在卡片里、左右各留一条与padding 等宽的空隙（实测 10–17px）。
+   口径对齐主模块 #timeCard / #geoInfo：--pad-x 抵消用，--hx 表头文字内缩用，两者同值。
+   实测基准：卡片 border 1px，故表头左右边缘与卡片外边缘的差值应为 **1px**（不是 0）。 */
+.card .card-body { padding: 0 var(--pad-x, 0px); }
+/* 有 .card-body 的面板：卡片自身已有水平 padding，body 必须显式归零，
+   否则上面那条 `.card .card-body` 会与卡片 padding **叠加**成双倍内缩。 */
+#svOptsCard .card-body { padding: 0; }
+#svOptsCard { left: 16px; top: var(--dock-top); width: 316px; padding: 0 16px 12px; --pad-x: 16px; }
+/* ★ v44（需求 2）：折叠不再用 display:none（那会让展开 / 收起动画失效）——
+   改由 style.css 的统一折叠块以 max-height + overflow 实现，JS 负责平滑过渡。 */
+#svOptsCard.collapsed { padding-bottom: 0; }
+#svOptsCard .card-body { max-height: calc(100vh - var(--dock-top) - 24px); overflow: auto; }
+#svOptsCard.fly-left .opt-fly { left: auto; right: calc(8px + 100%); }
+#svOptsCard.fly-left .opt-fly::before { left: auto; right: -10px; }
+#svOptsCard.fly-left .opt-fly::after { right: auto; left: -10px; }
+
+/* 通用拉伸把手（四边 + 四角）：由 JS 注入到每个浮窗 */
+.sv-grip { position: absolute; z-index: 6; }
+.sv-grip.n { left: 8px; right: 8px; top: -3px; height: 7px; cursor: ns-resize; }
+.sv-grip.s { left: 8px; right: 8px; bottom: -3px; height: 7px; cursor: ns-resize; }
+.sv-grip.w { top: 8px; bottom: 8px; left: -3px; width: 7px; cursor: ew-resize; }
+.sv-grip.e { top: 8px; bottom: 8px; right: -3px; width: 7px; cursor: ew-resize; }
+.sv-grip.nw { left: -3px; top: -3px; width: 13px; height: 13px; cursor: nwse-resize; }
+.sv-grip.ne { right: -3px; top: -3px; width: 13px; height: 13px; cursor: nesw-resize; }
+.sv-grip.sw { left: -3px; bottom: -3px; width: 13px; height: 13px; cursor: nesw-resize; }
+.sv-grip.se { right: -3px; bottom: -3px; width: 13px; height: 13px; cursor: nwse-resize; }
+.card.sv-resizing { box-shadow: 0 18px 44px rgba(2, 6, 23, .30); }
+.card.sv-active { z-index: 40; }
+
+/* ---------- 右上角时间面板（v31 需求二十一：结构与主视图「时间」面板一致，
+     仅额外在显著位置单独标注「当地地方太阳时」） ---------- */
+/* ★ v35（需求十四）：与主模块 timeCard 完全对齐 —— 宽度 336px、内边距 16px（需求十六
+   已把内容块做成与主模块一致，宽度也一致才放得下二分二至刻度）；并加与主模块同款的
+   「高度上限 + 内部滚动」兜底，新增三块内容后矮屏（<760px 高）不再溢出视口下沿。 */
+/* ★ v40（需求四）：与主模块 #timeCard 同步改为**自动拉伸完整显示**（去掉 max-height +
+   内部滚动），内容超高时由 JS 依可用高度写入 --timecard-fit 整体缩放，绝不裁剪 / 折叠。 */
+#svTimeTop {
+  right: 16px; top: var(--dock-top); width: 336px; padding: 0 16px 12px;
+  --pad-x: 16px;
+  height: auto; max-height: none; overflow: visible;
+  touch-action: pan-y; overscroll-behavior: contain;
+  zoom: var(--timecard-fit, 1);
+}
+/* 滚动时表头吸附在顶部（与主模块 #timeCard > .card-head 同款） */
+#svTimeTop > .card-head { position: sticky; top: 0; z-index: 2; }
+/* 折叠：v31 起按钮一直在切换 collapsed 类，但此前没有对应 CSS —— 折叠实际无效。
+   v35 补上：正文（.svtt-body）整体隐藏，只留表头一行。 */
+#svTimeTop.collapsed { padding-bottom: 0; }
+#svTimeTop .t-block { margin-top: 8px; }
+#svTimeTop .terms { margin-top: 6px; }
+#svTimeTop .term-note { margin-top: 3px; }
+#svTimeTop .svtt-lst {
+  margin-top: 9px; padding: 8px 10px; border-radius: calc(10px * var(--ui));
+  background: linear-gradient(180deg, rgba(37, 99, 235, .10), rgba(34, 211, 238, .06));
+  border: 1px solid rgba(37, 99, 235, .20);
+}
+#svTimeTop .svtt-lst i { font-style: normal; font-size: calc(11px * var(--ui) * var(--ui-fs)); color: var(--ink-dim); }
+#svTimeTop .svtt-lst b {
+  display: block; margin-top: 3px; font-size: calc(24px * var(--ui) * var(--ui-fs));
+  font-weight: 800; color: var(--accent, #1d4ed8); font-variant-numeric: tabular-nums; letter-spacing: .5px;
+}
+
+/* ---------- 下方「观测点与时间控制」面板（v31 需求十一：左观测点 / 右时间） ----------
+   ★ v62（需求 3）：改为**在整屏水平居中** —— left / right 同时归零 + margin:auto，
+   宽度由下方尺寸块用 clamp() 给出确定值（三者齐备 ⇒ 绝对定位元素按「两侧 margin 等分」
+   居中）。不再使用 v33 的 --sv-right-gap 让位宽度：右下角那一列悬浮窗
+   （地球 / 天球 / 地面全景）本身就自下而上堆叠到「本面板上沿」为止
+   （见 sunview.js 的 applySurfaceLayout → baseY），两者天然不重叠。 */
+#svTimeBar {
+  left: 0; right: 0;
+  margin-left: auto; margin-right: auto;
+  bottom: 14px; transform: none;
+  /* ★ v61 修正：内边距改为随 --ui 缩放 —— 写死 16px 时，面板一缩小它就成了「不随 --ui 缩的
+     固定占位」（实测 552px 视口下面板 219px 里被它吃掉 32px），内容因此永远收不完，
+     也就永远消不掉横向溢出。--pad-x 必须同值，否则 .card-head 的满宽出血抵消量对不上。 */
+  padding: 0 calc(16px * var(--ui)) calc(10px * var(--ui));
+  --pad-x: calc(16px * var(--ui));
+}
+/* ★ v62（需求 3）：折叠态必须**同时**清掉尺寸块里的 min-width / max-width 与 aspect-ratio，
+   否则面板会被「宽度下限 50vw」撑开、被「宽高比 4.15」压扁，收不成紧凑的一条表头。
+   （`#svTimeBar.collapsed` 特异性 (1,1,0) 高于尺寸块的 `#svTimeBar` (1,0,0)，与书写顺序无关。）
+   left:50% + translateX(-50%) 使其仍以屏幕中线为中心收缩。 */
+#svTimeBar.collapsed {
+  left: 50%; right: auto; width: auto; max-width: none; min-width: 0;
+  margin: 0; aspect-ratio: auto;
+  transform: translateX(-50%); padding-bottom: 0;
+}
+/* ===== ★ v58（需求 1）：本面板的**尺寸下限 + 内部自适应** =====
+   用户截图反映的问题（窗口小 / 系统显示缩放较大时）：`--uiW × --uiH` 会掉到 0.3 上下，
+   本面板被压成 ~390px 宽 ⇒
+     · 标题「观测点位置 / 时间设置」被**逐字折行**（“时间设置”竖成 4 行）；
+     · 纬度 / 日期滑块上的关键点注释互相**压字**；
+     · 播放速度、自定义 / 应用等行**挤出面板下沿**，下方露出大片空白。
+   根因是「面板可以无限变窄、内容却不会变窄」。这里补三层下限，互不冲突：
+
+   ① 字号地板（只作用于本面板子树）：
+      `--ui` 兜到 0.80 —— 字号 ≥ ~9px、控件仍可点。
+      0.80 低于 1366×768 的 0.8096，因此 **1366 / 1920 / 4K 三档观感零变化**，
+      只在更小的窗口才生效。这是覆盖子树的自定义属性，**不影响全局 --ui**
+      （地球侧面板与 app.js 的 __panelFit 口径完全不变）。
+
+   ② 宽度地板 742px：
+      两列各 348px（= 滑块 228px + 行内固定开销 98px + 列内边距 22px）
+      + 列间隙 14 + 面板左右内边距 32。228px 是「纬度滑块 5 个关键点注释
+      互不压字」实测所需的最小滑块宽度（注释位置按百分比分布，越窄越挤）。
+      用 min(100vw − 24px, 742px) 夹取 ⇒ 面板本体**永不出屏**；
+      真的放不下时由 .svtb-cols 横向滚动兜底，绝不把列压扁（压扁正是压字 / 折行的根因）。
+
+   ③ 高度：面板本身 height:auto（内容自然撑高），这里只给一个地板值；
+      正文 .svtb-body 允许**纵向滚动** ⇒ 即使用户把高度拖得比内容矮，
+      内容也是滚动可见，而不是溢出到卡片外（截图里“控件悬空 + 大片空白”的来源）。 */
+#svTimeBar {
+  /* ★ v62（需求 3）：本面板改为「**可缩放 + 宽高比固定 + 随用户字号倍率同比缩放**」——
+     取代 v61 的「40vw 写死、不可拉伸」（用户反馈尺寸太小）。
+
+     ① 宽度占屏宽比例：默认 **60%**；用户可拖拽，范围 **50% ~ 70%**（下限 / 上限）。
+        三者都再 × 用户字号倍率 --svtb-fs（默认字号 = 1）⇒
+        「面板文字字号缩放多少倍，宽占屏比的范围上下限就跟着缩放多少倍」。
+     ② 宽度用 clamp() 表达（上下文 = 视口宽度），并用 min(…, 100vw − 32px) 兜底防出屏；
+        与 JS（fitTimeBarScale）用的是**同一公式**，两处始终一致。
+     ③ 高度由 aspect-ratio 锁定为 4.15 : 1（★ v62（需求 5）用户提供红框截图的实测比例：
+        原 3.7 : 1 在实际渲染中令面板比内容高出约 30px，底部出现一条空白带 —— 用户截图
+        实测内容自然高宽比 ≈ 990 : 237 ≈ 4.18，此处取 4.15（略留余量防内容溢出触发兜底缩小），
+        既不随内容撑高、也不随窗口变形；用户拖拽任一方向都只改宽度、高度自动跟随（见 JS）。
+     ④ 内部同步缩放：JS 把本面板子树的 `--ui` 绑定到「宽度 / 1000」（1000 = v60 实测基准，
+        其 270 高 / 1000 宽 = 1/3.7 与本条宽高比同源）⇒ 面板宽多少、内部控件与字号就等比
+        缩放多少，内容永远刚好铺满：不溢出（不遗漏）、不压字、不留白、不变形。
+        为此本面板内**所有**尺寸（内边距 / 间隙 / 各 min-width / 字号）都必须 ∝ --ui。
+     ⑤ 折叠态由 style.css 统一折叠块 + 上方 #svTimeBar.collapsed 接管
+        （那里会清掉这里的 min-width / max-width / aspect-ratio）。 */
+  --svtb-min: min(calc(50vw * var(--svtb-fs, 1)), calc(100vw - 32px));
+  --svtb-max: min(calc(70vw * var(--svtb-fs, 1)), calc(100vw - 32px));
+  width: clamp(var(--svtb-min), calc(var(--svtb-frac, 0.6) * 100vw * var(--svtb-fs, 1)), var(--svtb-max));
+  min-width: var(--svtb-min);
+  max-width: var(--svtb-max);
+  /* ★ v61 修正：内部把 --ui-fs 置为 1 —— 面板宽已由 --svtb-fs 承担字号倍率，内部 --ui 又
+     ∝ 倍率，若正文再乘一次 --ui-fs 就会变成倍率的**平方**（倍率 1.8 ⇒ 字号 3.24 倍）而必然溢出。 */
+  --ui-fs: 1;
+  aspect-ratio: 4.15;   /* ★ v62（需求 5）：3.7 → 4.15，消除面板底部空白带（注释见上方尺寸块 ③） */
+  height: auto;
+  min-height: 0;
+  /* ★ v62：此处原 `overflow: hidden` 已删除 —— 八向拉伸把手（.sv-grip，向卡片外扩 3px）
+     会被它裁掉一半命中区；正文 .svtb-body 自带 overflow-y:auto，卡片不再需要这层裁切。
+     折叠动画期间的裁切由 style.css 的 `.card.pm-folding { overflow: hidden }` 兜底。 */
+  /* 纵向 flex：正文 .svtb-body 用 flex:1 填满剩余高度并独立滚动，
+     内容超出时只在正文内部滚动，绝不溢出到卡片外。
+     ★ 这里**只写 flex-direction，不写 display** —— 否则 ID 选择器的特异性会压过
+       `.sv-only { display: none }`，面板开关关掉后仍会显示（display 见下方
+       `body[data-view="sun"] #svTimeBar.sv-on` 一条，只在需要显示时才切成 flex）。 */
+  flex-direction: column;
+}
+/* 仅在「太阳视运动视图 + 面板开关打开」时用 flex 布局（特异性高于 .sv-only.sv-on） */
+body[data-view="sun"] #svTimeBar.sv-on { display: flex; }
+/* 正文填满固定高度；两列随之等高撑满，面板观感紧凑（不出现底部大片空白）。 */
+#svTimeBar > .svtb-body { flex: 1 1 auto; min-height: 0; }
+#svTimeBar .svtb-cols { flex: 1 1 auto; }
+#svTimeBar > .svtb-body { overflow-y: auto; overflow-x: hidden; }
+/* ★ v44（需求 2）：折叠由 style.css 统一块 + JS max-height 过渡实现 */
+.svtb-body { display: flex; flex-direction: column; gap: calc(7px * var(--ui)); padding-bottom: calc(2px * var(--ui)); }
+/* ★ v56（需求六）：**横排恒成立**。旧写法 `flex-wrap: wrap` + `flex: 1 1 50%` 是一个
+   「必然换行」的组合 —— flex 收集行时按**假设主轴尺寸**逐项累加（含 gap）：
+   50% + 14px(gap) + 50% = 100% + 14px > 容器内容宽 ⇒ 第二列**在任何视口宽度下都会掉到下一行**
+   （flex 收缩只发生在同一行内部，救不了换行判定）。这就是用户看到「不是横排」的直接原因
+   —— 与 v41/v54 注释里「恒为横排两列」的说法相反。
+   修法：基础尺寸 50% → 0（两列等宽），并禁止换行。 */
+.svtb-cols { display: flex; gap: calc(14px * var(--ui)); align-items: stretch; flex-wrap: nowrap; }
+.svtb-col {
+  flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: calc(6px * var(--ui));
+  padding: calc(8px * var(--ui)) calc(11px * var(--ui)) calc(9px * var(--ui)); border-radius: calc(11px * var(--ui));
+  background: linear-gradient(180deg, rgba(15, 23, 42, .035), rgba(15, 23, 42, .015));
+  border: 1px solid var(--line);
+}
+/* ★ v56（需求六）：面板过窄时**不再改竖排**（用户明确要求「始终横排两列」）。
+   旧 v54 的 `@container svtb (max-width: 460px) { .svtb-cols { flex-direction: column } }`
+   整块删除 —— 它就是「窗口稍窄就变竖排」的那条规则（容器查询按面板**自身**内容宽判定，
+   面板宽 ≤ 492px 即触发）。改为「最小列宽 + 横向滚动」：两列各保底 348px，容器横向滚动，
+   横排形态在任何宽度下都不变。 */
+/* ★ v61（需求 1）：v58 的「列宽 348px 地板 + 容器横向滚动」容器查询**整块删除** ——
+   它按面板自身宽度判定，会在面板宽 < 710px 时把两列钉成 348px 固定宽，
+   于是内容总宽 742px 撑不下、出现横向滚动条（正是「内容遗漏」的一种）。
+   现在面板内部缩放已由 JS（fitTimeBarScale）绑定到自身宽度（--ui = 宽 / 760），
+   内容宽度永远等于面板宽度 ⇒ 既不压字、也永不溢出，不需要任何地板 / 滚动兜底。 */
+.svtb-ttl {
+  display: flex; align-items: baseline; gap: 6px;
+  /* ★ v58（需求 1）：允许**整块换行**（标题 + 数值分两行），但**禁止块内逐字折行**。
+     旧写法无 flex-wrap、子项又都是可收缩的内联盒 ⇒ 面板一窄就把「时间设置」四个字
+     竖排成 4 行。现在：外层 wrap 只作为极端窄屏的兜底，各子项 white-space:nowrap
+     保证任何单个词不会被拆开。 */
+  flex-wrap: wrap;
+  font-size: calc(12.5px * var(--ui) * var(--ui-fs)); font-weight: var(--ui-fw-m, 600); color: var(--ink);
+  padding-bottom: 5px; margin-bottom: 1px; border-bottom: 1px dashed var(--line);
+}
+/* 标题文字（含 emoji 图标）整体不拆行；数值贴右且不拆行。 */
+.svtb-ttl .svtb-ttl-t { flex: none; white-space: nowrap; display: inline-flex; align-items: baseline; gap: 5px; }
+.svtb-ttl .svtb-cap { font-weight: 400; align-self: center; white-space: nowrap; }
+.svtb-ttl .dim { font-weight: 400; font-size: calc(10.5px * var(--ui) * var(--ui-fs)); color: var(--ink-faint); }
+.svtb-row { display: flex; align-items: center; gap: calc(8px * var(--ui)); }
+.svtb-row.wrap { flex-wrap: wrap; }
+/* ★ v44（需求三）：含滑块的行在**自身**留出注释带（.svtb-node 挂在轨道下方 15·ui）。
+   注意必须放在行上而不是滑块上 —— .svtb-slider 一旦有外下边距，flex 居中就会按外边距盒
+   计算，轨道会整体上移 7.5·ui，与左侧标题 / 右侧数值错开半行。 */
+.svtb-row.sl { padding-bottom: calc(15px * var(--ui)); }
+.svtb-cap { font-size: calc(11.5px * var(--ui) * var(--ui-fs)); color: var(--ink-dim); flex: none; }
+.svtb-row > output {
+  font-size: calc(12px * var(--ui) * var(--ui-fs)); color: var(--ink);
+  font-variant-numeric: tabular-nums; flex: none; min-width: calc(54px * var(--ui)); text-align: right;
+}
+.svtb-num {
+  width: calc(62px * var(--ui)); min-width: calc(46px * var(--ui)); font: inherit;
+  font-size: calc(11.5px * var(--ui) * var(--ui-fs));
+  padding: calc(2px * var(--ui)) calc(5px * var(--ui));
+  border: 1px solid var(--line); border-radius: calc(7px * var(--ui));
+  background: rgba(var(--panel-rgb, 255, 255, 255), var(--glass-ctl, 0.83)); color: var(--ink);
+}
+.svtb-err { font-size: calc(11px * var(--ui) * var(--ui-fs)); color: var(--warn); }
+/* ★ v43（需求一·5）：滑块 / 关键点 / 轨道 三层叠放次序 ——
+     ① 轨道（最底层）② 关键点（实心小圆点，**直接内嵌在轨道上**）③ 滑块（空心大圆点，最大，在最上层）。
+   实现方式：三个滑块统一用 `.svtb-slider { position: relative; --trk-h: 10px; }`，
+     · 轨道由 `.svtb-slider::before` 画（自带渐变底 + 圆角），z-index 0；
+     · 关键点层 `.svtb-nodes` 绝对定位铺满整条滑块，z-index 1，圆点垂直居中于轨道中线；
+     · range 元素透明铺满、z-index 2，只有 thumb 可见（空心大圆点）⇒ 拖动手感与命中区不变。
+   此前实现是「range 原生轨道 + 节点层挂在轨道**下方**用负 top 把圆点顶到轨道上」，
+   圆点与滑块同尺寸且都是空心 ⇒ 关键点被滑块盖住、层次糊在一起。
+
+   ★ v44（需求三）：在 v43 三层结构之上做**几何统一** ——
+     ① 轨道细化：主滑块轨道 6·ui（旧 10·ui）；地方太阳时轨道 8·ui（旧 12·ui）。
+        两者都「略大于」播放速度那条原生轨道（4·ui，见 style.css 的 `input[type=range]`）
+        ⇒ 「主轨道 > 速度轨道」的层次稳定存在。
+     ② 关键点改为**纯填充圆点**：`--trk-h` 既是轨道粗细也是圆点直径（永远同宽），
+        纯 `var(--accent)` 填充、**无描边**、无外发光，也不再分「普通 / prime 两种大小」。
+     ③ 垂直居中：轨道中线 == 行内容盒中线 —— 旧写法给 `.svtb-slider` 加
+        `margin-bottom: 15px` 给注释让位，而 flex `align-items:center` 是按**外边距盒**
+        居中的 ⇒ 整条轨道被顶高 7.5·ui，与左侧标题、右侧数值错开半行。
+        现在注释带改由行自身的 `padding-bottom`（`.svtb-row.sl`）预留，
+        行内容盒里只剩轨道本身 ⇒ 三者共用一条中线。
+     ④ 地方太阳时轨道上「圆点 + 竖线」两套标记重复 —— **只保留圆点**（见 .svtb-edge 处）。 */
+.svtb-slider {
+  position: relative; flex: 1 1 auto; min-width: calc(70px * var(--ui));
+  height: calc(18px * var(--ui));
+  --trk-h: 6px;            /* 轨道粗细 == 关键点圆点直径 */
+  --trk-thumb-r: 9px;      /* 滑块半径（18·ui / 2）：端点圆点的补偿基准 */
+  /* ★ v56（时间滑块对齐·7）：**滑块盒高**（= 原生 runnable-track 的可用高度）。
+     Blink 里 thumb 的纵向基准是「thumb 顶边 == 轨道顶边」（与 style.css 的全局
+     `::-webkit-slider-thumb { margin-top: (4 − 14)/2 = −5px }` 同一套算法），
+     故要让 thumb 纵轴居中对齐轨道中线，必须显式写 margin-top = (盒高 − thumb 直径)/2。
+     主滑块盒高 = thumb 直径（18·ui）⇒ 0；宽轨盒高 26·ui、thumb 20·ui ⇒ +3·ui
+     （旧值恒为 0，正是宽轨滑块比轨道条/刻度圆点**高 3px** 的原因）。 */
+  --trk-box-h: 18px;
+  --trk-off: -10px;        /* 轨道中线 − 注释行顶 = 18/2 − (18 + 1) */
+  /* ★ v54（时间滑块对齐·1）：**共享栅格内缩** —— 原生 range 的 thumb 圆心行程是
+     「容器左缘 + t/2 … 容器右缘 − t/2」，而轨道条 / 关键点层原本 `left:0; right:0`
+     铺满整个容器 ⇒ 两端各差半个 thumb（旧版靠 JS 里的 TB_THUMB_W=18 / _WIDE=20
+     做百分比补偿硬凑，缩放或换轨道后必然漂）。现在把**轨道条与关键点层统一内缩
+     一个 thumb 半径**（--trk-pad），三者共用同一条栅格：
+       轨道条 / 关键点层  ⟵  left/right = --trk-pad
+       range（保持铺满）  ⟹  thumb 圆心行程天然等于上面那条内缩栅格
+     于是 JS 只需写纯百分比 `q·100%`，不再需要任何 thumb 直径补偿常数。 */
+  --trk-pad: calc(var(--trk-thumb-r) * var(--ui));
+}
+.svtb-slider.wide { flex: 1 1 auto; min-width: 0; }
+/* ① 轨道：最底层（主题色半透明 ⇒ 上方的实心关键点仍然看得出来） */
+.svtb-slider::before {
+  content: ""; position: absolute; left: var(--trk-pad); right: var(--trk-pad); z-index: 0;
+  top: 50%; transform: translateY(-50%);
+  height: calc(var(--trk-h) * var(--ui)); border-radius: 999px;
+  background: var(--accent, #2563eb); opacity: .42;
+}
+/* ② range 本体：透明铺满，只让 thumb 出现在最上层 */
+.svtb-slider > input[type=range] {
+  position: absolute; left: 0; top: 0; width: 100%; height: 100%; margin: 0; z-index: 2;
+  background: transparent; -webkit-appearance: none; appearance: none;
+}
+.svtb-slider > input[type=range]::-webkit-slider-runnable-track { height: 100%; background: transparent; }
+.svtb-slider > input[type=range]::-moz-range-track { height: 100%; background: transparent; }
+/* ③ 滑块：空心大圆点（直径 18·ui，比关键点 9·ui 大一倍） */
+/* ★ v56（时间滑块对齐·8）：尺寸与纵向定位都改由 --trk-thumb-r / --trk-box-h 单点推导
+   （旧写法把 18px 写死在宽度上、margin-top 写死 0，改 thumb 尺寸就与 --trk-pad 脱钩）。 */
+.svtb-slider > input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: calc(var(--trk-thumb-r) * 2 * var(--ui)); height: calc(var(--trk-thumb-r) * 2 * var(--ui));
+  border-radius: 50%;
+  background: #fff; border: calc(3px * var(--ui)) solid var(--accent, #2563eb);
+  box-shadow: 0 2px 7px rgba(2, 6, 23, .38);
+  margin-top: calc((var(--trk-box-h) - var(--trk-thumb-r) * 2) / 2 * var(--ui));
+}
+/* ★ v56：Gecko 的 thumb 尺寸必须与 Blink 一致 —— 旧值 12·ui 比 CSS 的单一真源
+   （--trk-thumb-r = 9px ⇒ 直径 18·ui）小 6·ui，而轨道条 / 关键点层按 9·ui 内缩，
+   于是 Firefox 里 thumb 圆心行程两端各差 3·ui（见 --trk-pad 注释），滑块与轨道错开。
+   Gecko 自带「thumb 在轨道内纵向居中」⇒ 不需要 margin-top 补偿。 */
+.svtb-slider > input[type=range]::-moz-range-thumb {
+  width: calc(var(--trk-thumb-r) * 2 * var(--ui)); height: calc(var(--trk-thumb-r) * 2 * var(--ui));
+  border-radius: 50%;
+  background: #fff; border: calc(3px * var(--ui)) solid var(--accent, #2563eb);
+}
+/* ② 关键点层：与轨道共用同一条内缩栅格（z 1，在轨道之上、滑块之下）。
+   ★ v54：left/right 由 0 改为 var(--trk-pad)（= thumb 半径）——
+   这样节点写纯百分比 `q·100%` 就精确落在 thumb 圆心行程上，无需 JS 补偿。 */
+.svtb-nodes {
+  position: absolute; left: var(--trk-pad); right: var(--trk-pad); top: 0; height: 100%; z-index: 1;
+  pointer-events: none;
+}
+.svtb-node {
+  position: absolute; top: 100%; transform: translateX(-50%);
+  margin-top: calc(1px * var(--ui));
+  font-size: calc(9.5px * var(--ui) * var(--ui-fs)); line-height: calc(14px * var(--ui));
+  /* ★ v44（需求三）：关键点文字与所在面板同口径 —— 浅色模式用主题色，深色模式为白色。 */
+  color: var(--accent, #2563eb); font-weight: var(--ui-fw-m, 600);
+  white-space: nowrap; font-variant-numeric: tabular-nums;
+  pointer-events: auto; cursor: pointer; padding: 0 2px; border-radius: 4px; user-select: none;
+}
+.svtb-node:hover { color: var(--accent, #2563eb); background: var(--accent-soft, rgba(37, 99, 235, .10)); }
+body[data-mode="dark"] .svtb-node { color: #fff; }
+body[data-mode="dark"] .svtb-node:hover { background: rgba(255, 255, 255, .14); }
+/* ★ v44（需求三）：关键点圆点 = **纯填充**、无描边、直径 == 轨道粗细（--trk-h）、颜色与轨道同色。
+   推导（三种滑块共用）：设滑块内容高 H、注释 margin-top 1·ui、圆点半径 r = --trk-h/2，
+     节点层与滑块等高 ⇒ 注释行顶 = H + 1·ui；轨道中线 = H/2；
+     ⇒ ::before 的 top = H/2 − (H + 1) − r = --trk-off − r  （主滑块 −10·ui / 宽轨 −14·ui）。 */
+.svtb-node::before {
+  content: ""; position: absolute; left: 50%;
+  top: calc((var(--trk-off, -10px) - var(--trk-h, 6px) / 2) * var(--ui));
+  width: calc(var(--trk-h, 6px) * var(--ui)); height: calc(var(--trk-h, 6px) * var(--ui));
+  transform: translateX(-50%); border-radius: 50%;
+  background: var(--accent, #2563eb); border: 0; box-shadow: none;
+}
+/* 关键节点（本初子午线 / 赤道 / 二分二至 / 日中天）：**只靠文字**加粗区分
+   —— 圆点与普通节点完全同尺寸同色（旧版另做一枚 11·ui 的深色大圆点，违反「同轨道同色」）。 */
+.svtb-node.prime { color: var(--accent, #2563eb); font-weight: var(--ui-fw-b, 700); }
+body[data-mode="dark"] .svtb-node.prime { color: #fff; }
+/* 端点防溢出：靠左的节点左对齐、靠右的右对齐（仅**文字**贴边，避免溢出面板）。
+   ★ v54：圆点位置随之改写 —— 关键点层已内缩 --trk-pad，其左右缘**就是** thumb 圆心
+   在 q=0 / q=1 时的位置，故圆点只需回退半个自身直径即可精确压在端点上
+   （旧值 (thumb-r − trk-h/2) 是为「未内缩的全宽层」算的，栅格内缩后必然偏 10px）。 */
+.svtb-node.l0 { transform: none; }
+.svtb-node.r0 { transform: none; }
+.svtb-node.l0::before {
+  left: calc(var(--trk-h, 6px) * var(--ui) / -2); right: auto;
+}
+.svtb-node.r0::before {
+  left: auto; right: calc(var(--trk-h, 6px) * var(--ui) / -2);
+}
+/* 标题右侧显著色数值（观测点经纬度 / 地方太阳时）—— v38 字号加大突出对比 */
+.svtb-ttl .svtb-val {
+  margin-left: auto; color: #d93025; font-weight: 800;
+  font-size: calc(14.5px * var(--ui) * var(--ui-fs));
+  font-variant-numeric: tabular-nums; white-space: nowrap; letter-spacing: .2px;
+}
+/* ★ v41（需求一·1）：**竖排已删除**，.svtb-cols 恒为横排两列并排。
+   原 .vert 系列规则（含 `#svTimeBar:has(.svtb-cols.vert)` 收窄宽度、竖排短标签
+   data-short 切换）整块移除。 */
+/* 红色关键数值（观测点经纬度 / 地方太阳时）统一字号 */
+.svtb-ttl .svtb-val { font-size: calc(15px * var(--ui) * var(--ui-fs)); }
+.svtb-presets { display: flex; flex-wrap: wrap; gap: 4px; }
+.svtb-presets .btn.xs { height: 22px; padding: 1px 8px; font-size: calc(10.5px * var(--ui) * var(--ui-fs)); }
+.svtb-presets .btn.xs.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+/* ---- 地方太阳时滑块（#svHour，class="svtb-slider wide"）----
+   ★ v43（需求一·5）：这一条的轨道不是 ::before 而是昼夜分段条 .svtb-bar（有真实配色语义），
+   故 .svtb-slider.wide 关闭 ::before，改由 .svtb-bar 当轨道；关键点层已移入 .svtb-track 内部
+   （index.html），以便和 bar / range 在同一坐标系里叠三层。
+   ★ v44（需求三）：
+     ① 轨道细化到 8·ui（旧 12·ui）—— 仍略大于播放速度轨道的 4·ui；
+     ② 原 .svtb-edge 竖线（日出 / 日中天 / 日落三根）与关键圆点是同一信息的两套画法，
+        **按需求只保留圆点**，竖线与其 JS 写点（sunview.js）一并删除；
+     ③ 注释带同样交给 `.svtb-row.sl` 的 padding-bottom（见上），轨道与标题 / 数值同中线。
+     ④ ★ v54：thumb 直径补偿（曾是 TB_THUMB_W / TB_THUMB_W_WIDE 两个 JS 硬编码常数）
+        **整体删除** —— thumb 尺寸改为只由本块 `--trk-thumb-r` 声明一次，
+        再由 `--trk-pad = --trk-thumb-r × --ui` 派生出轨道条与关键点层的统一内缩，
+        JS 只写纯百分比。缩放 / 改 thumb 尺寸都不会再漂。 */
+.svtb-slider.wide {
+  height: calc(26px * var(--ui));
+  --trk-h: 8px;
+  --trk-thumb-r: 10px;     /* 宽轨 thumb 20·ui 的一半 */
+  /* ★ v56：宽轨盒高 26·ui ≠ thumb 直径 20·ui ⇒ thumb 必须下移 (26 − 20)/2 = 3·ui
+     （见 .svtb-slider 的 --trk-box-h 注释），否则滑块比轨道条高 3px。 */
+  --trk-box-h: 26px;
+  --trk-off: -14px;        /* 26/2 − (26 + 1) */
+}
+.svtb-slider.wide::before { display: none; }
+.svtb-track { position: relative; height: 100%; }
+/* ★ v54（时间滑块对齐·2）：昼夜分段轨道条与关键点层**共用同一条内缩栅格** ——
+   left/right = --trk-pad（= thumb 半径 10·ui），range 仍铺满 .svtb-track。
+   浏览器把 thumb 圆心放在「range 左缘 + t/2 … 右缘 − t/2」，
+   轨道条内缩 t/2 后两者**恒等**，于是 JS 里日出/日落的分段边界可以退回纯百分比
+   （`rise/24·100%`），删掉原先 TB_THUMB_W_WIDE 那个硬编码补偿。 */
+.svtb-track .svtb-bar {
+  position: absolute; left: var(--trk-pad); right: var(--trk-pad); top: 50%; transform: translateY(-50%); z-index: 0;
+  height: calc(var(--trk-h, 8px) * var(--ui)); border-radius: 999px; overflow: hidden;
+  background: #16233c; box-shadow: inset 0 1px 3px rgba(0, 0, 0, .45);
+}
+.svtb-track .svtb-day { position: absolute; top: 0; bottom: 0; background: linear-gradient(90deg, #ffcf7a, #fff0c4 45%, #ffd58a); }
+.svtb-track .svtb-night { position: absolute; top: 0; bottom: 0; background: linear-gradient(90deg, #0b1733, #1d2f63); }
+/* ★ v43：关键点层（#svSunNodes）在 .svtb-track 内 —— 关键点圆心对齐 .svtb-bar 中线；
+   ★ v44：几何参数全部换成 `--trk-*` 变量（top / 直径 / 端点补偿），与主滑块同一套公式。 */
+.svtb-track .svtb-nodes { z-index: 1; }
+.svtb-track input[type=range] {
+  position: absolute; left: 0; right: 0; top: 0; width: 100%; height: 100%; margin: 0; z-index: 2;
+  background: transparent; -webkit-appearance: none; appearance: none; cursor: pointer;
+}
+.svtb-track input[type=range]::-webkit-slider-runnable-track { height: 100%; background: transparent; }
+.svtb-track input[type=range]::-moz-range-track { height: 100%; background: transparent; }
+/* ★ v56（时间滑块对齐·9）：宽轨 thumb 与主滑块同一套单点推导 ——
+   尺寸 = --trk-thumb-r × 2（20·ui），纵向 margin-top = (盒高 26 − 直径 20)/2 = +3·ui
+   （旧值 0 ⇒ 滑块圆心落在 10·ui，而轨道条 / 刻度圆点圆心在 13·ui，差 3px；
+    这也是用户「时间滑块与轨道未对齐」在 Blink 下的直接数值来源）。 */
+.svtb-track input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: calc(var(--trk-thumb-r) * 2 * var(--ui)); height: calc(var(--trk-thumb-r) * 2 * var(--ui));
+  border-radius: 50%;
+  background: #fff; border: calc(3px * var(--ui)) solid var(--accent, #1d4ed8);
+  box-shadow: 0 2px 8px rgba(2, 6, 23, .4);
+  margin-top: calc((var(--trk-box-h) - var(--trk-thumb-r) * 2) / 2 * var(--ui));
+}
+/* ★ v56：Gecko 旧值 14·ui < 20·ui ⇒ 圆心行程两端各差 3·ui（与主滑块同一处错位），
+   统一为 --trk-thumb-r × 2；Gecko 自动纵向居中，无需 margin-top。 */
+.svtb-track input[type=range]::-moz-range-thumb {
+  width: calc(var(--trk-thumb-r) * 2 * var(--ui)); height: calc(var(--trk-thumb-r) * 2 * var(--ui));
+  border-radius: 50%;
+  background: #fff; border: calc(3px * var(--ui)) solid var(--accent, #1d4ed8);
+}
+.svtb-track .svtb-node { font-size: calc(10px * var(--ui) * var(--ui-fs)); line-height: calc(15px * var(--ui)); }
+/* ★ v43（需求一·5）：v36 的「春分/夏至/秋分/冬至」按钮行已从 index.html 删除
+   （与日期滑块上的二分二至关键点功能重复，且与月份标注压字）—— 样式一并移除。 */
+.svtb-spd { display: flex; align-items: center; gap: calc(8px * var(--ui)); flex: 1 1 auto; min-width: calc(140px * var(--ui)); }
+.svtb-spd input[type=range] { flex: 1 1 auto; min-width: 0; }
+
+/* ---------- 天球监测面板 ---------- */
+/* ★ v44（需求二）：与主模块 #geoInfo 同口径 —— **移除右侧与下侧的滚动条与滑动块**。
+   旧写法给 .svmon-body 限高 + overflow-y:auto（scrollbar-width:thin），
+   15 行数据在小屏上必然出现内部滚动条；现在不设上限、不滚动，
+   内容超高时由 fitMonitorPanel()（sunview.js）给整个面板写 `--timecard-fit` 等比缩小。 */
+#svMonitor { right: 16px; width: 276px; padding: 0 14px 12px; --pad-x: 14px; zoom: var(--timecard-fit, 1); }
+#svMonitor.collapsed { padding-bottom: 0; }
+/* ★ v34：面板行数由 6 → 15（对齐《副设置面板 › 数据面板》）；行距收窄、标签可折行、数值不换行。 */
+.svmon-body {
+  display: flex; flex-direction: column; gap: 4px; margin-top: 6px;
+  max-height: none; overflow: visible;
+}
+.svmon-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  padding: 4px 9px; border-radius: calc(8px * var(--ui)); background: rgba(15, 23, 42, .035); }
+.svmon-row i { font-style: normal; font-size: calc(11px * var(--ui) * var(--ui-fs));
+  color: var(--ink-dim); flex: 0 1 auto; min-width: 0; }
+.svmon-row b { font-size: calc(12px * var(--ui) * var(--ui-fs)); font-variant-numeric: tabular-nums;
+  flex: 0 0 auto; white-space: nowrap; }
+.svmon-row.big { background: linear-gradient(180deg, rgba(37,99,235,.12), rgba(34,211,238,.06));
+  border: 1px solid rgba(37,99,235,.20); padding: 6px 10px; }
+.svmon-row.big i { color: var(--ink-dim); }
+.svmon-row.big b { font-size: calc(18px * var(--ui) * var(--ui-fs)); font-weight: 800; color: #1d4ed8; }
+.svmon-row.night b { color: #1e3a8a; }
+/* ★ 本批次修复 #269（深色模式文字对比度）：上面两行读数把颜色写死成深蓝
+   （#1d4ed8 / #1e3a8a），在深色模式的近黑监视面板上几乎不可见 —— 深底改为亮蓝。 */
+body[data-mode="dark"] .svmon-row.big b { color: #93c5fd; }
+body[data-mode="dark"] .svmon-row.night b { color: #bfdbfe; }
+
+/* ---------- 悬浮窗（3 个） ---------- */
+/* v31（需求十 / 二十二）：拉伸窗口时内容必须**实时自适应填满** ——
+   此前画布写死 height:148px，把卡片拉高后下方会留出大片空白（内部画布不跟手）。
+   现在卡片改为纵向 flex：表头固定、card-body 撑满剩余高度、画布 flex:1 + min-height:0，
+   于是无论怎样拉伸 / 缩窄，画布都会铺满，且渲染器尺寸由 resizeWin 按 clientWidth/Height 同步。 */
+/* ★ v41（需求一·19）：默认尺寸整体放大一档（232 → 300 宽、画布 148 → 176 高）。
+   ★ v41（需求一·5）：加 `overflow:hidden` + 画布 `max-width/max-height:100%` ——
+   此前卡片被拉窄 / 界面字号放大时，内部画布按 width:100% 撑开却不受卡片高度约束，
+   内容会顶出卡片边界（表现为「悬浮窗显示不正确、内容超出窗口」）。 */
+.svwin {
+  width: calc(300px * var(--ui)); padding: 0 10px 10px;
+  --pad-x: 10px;
+  overflow: hidden;                       /* 内容一律裁进卡片内，绝不溢出 */
+  box-sizing: border-box;
+  /* ★ 本批次修复 #8：悬浮窗主体（画布区）默认不拦截指针事件。
+     室内 / 地面视图里悬浮窗可能落在主视图中心，若整窗捕获 pointerdown，
+     主视图拖拽（旋转机位）会被吞掉（探针实测：#gl 收不到 pointerdown）。
+     改为容器 pointer-events:none，仅标题栏 / 拉伸角 / 底部按钮恢复 auto ——
+     在悬浮窗画布区按下拖拽会穿透到下方主画布，窗口仍可拖动与缩放。 */
+  pointer-events: none;
+}
+.svwin .card-head,
+.svwin .sv-grip,
+.svwin .svwin-foot,
+.svwin .svwin-foot .btn { pointer-events: auto; }
+/* ★ 本批次（需求二）：天球 / 地面 / 观测点三个悬浮窗的**视图可拖拽旋转 / 滚轮缩放** ——
+   把这三块 3D 画布的指针事件恢复（容器仍为 none，仅画布 re-enable），
+   交互逻辑复用综合窗格那一套（makeSunComboCellOrbit / attachOrbit）。 */
+/* ★ v52（需求G8）：浮窗画布的指针事件**只在窗口真正可见且未折叠时**才接管 ——
+   旧写法无条件 `pointer-events:auto`，导致窗口折叠 / 过渡隐藏（.sv-hidden）时画布仍拦截
+   指针事件，把本该落到主画面的拖拽 / 滚轮吞掉。改为默认 none、仅在
+   `.svwin.sv-on` 且非 `.collapsed` / `.sv-hidden` 时恢复 auto。
+   （画布自身的 `.sv-hidden` 由上面 `!important` 的规则兜底；窗口隐藏时 display:none 自然不拦截。） */
+#svCvEarth, #svCvSky, #svCvGround { pointer-events: none; }
+.svwin.sv-on:not(.collapsed):not(.sv-hidden) #svCvEarth,
+.svwin.sv-on:not(.collapsed):not(.sv-hidden) #svCvSky,
+.svwin.sv-on:not(.collapsed):not(.sv-hidden) #svCvGround { pointer-events: auto; }
+body[data-view="sun"] .svwin.sv-only.sv-on { display: flex; flex-direction: column; }
+.svwin .card-head { flex: none; min-width: 0; }
+.svwin .card-head h2 {
+  /* ★ v44（需求 4）：与其它面板的表头字号统一（旧为 12.5px，比 .card-head h2 的
+     13px 小一档 —— 各面板标题的字号 / 基线必须一致）。 */
+  font-size: calc(13px * var(--ui) * var(--ui-fs));
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* card-body 必须是 flex 项且能收缩（min-height:0），否则画布会把卡片顶高 */
+.svwin .card-body { padding: 0; flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.svwin canvas {
+  display: block; width: 100%; flex: 1 1 auto; min-height: 72px; height: calc(176px * var(--ui));
+  max-width: 100%; max-height: 100%;
+  border-radius: calc(9px * var(--ui));
+  margin-top: 7px; background: #060a14; cursor: grab;
+}
+.svwin .svwin-foot { flex: none; display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.svwin .svwin-foot .btn.xs { height: 22px; padding: 1px 8px; font-size: calc(11px * var(--ui) * var(--ui-fs)); }
+.svwin.collapsed { padding-bottom: 0; }
+
+/* 悬浮窗停靠位（右下角一列；可由【面板】菜单隐藏 / 显示） */
+#svWinEarth  { right: 16px; }
+#svWinSky    { right: 16px; }
+#svWinGround { right: 16px; }
+
+/* ---------- 第一人称 HUD ---------- */
+#svFpHud { position: fixed; inset: 0; pointer-events: none; z-index: 26; display: none; }
+body[data-view="sun"].sv-fp #svFpHud { display: block; }
+#svFpHud .sv-badge {
+  position: absolute; left: 50%; top: calc(var(--dock-top) + 6px); transform: translateX(-50%);
+  padding: 6px 16px; border-radius: 999px; font-size: calc(12.5px * var(--ui) * var(--ui-fs));
+  font-weight: 700; color: #fff; background: rgba(29, 78, 216, .82);
+  box-shadow: 0 6px 20px rgba(2, 6, 23, .4); backdrop-filter: blur(6px);
+}
+/* 罗盘摆在**左下角**：右上角是「时间」面板 + 悬浮窗的地盘，直接放右上会和
+   顶栏的「面板」按钮、时间面板叠在一起；左下角在第一人称模式下是空的。 */
+#svCompass {
+  /* ★ 本批次（需求四·d）：默认出现在**视角正中心偏下方**（水平居中），整盘可自由拖动。 */
+  position: absolute; left: 50%; top: calc(50% + 30px);
+  width: 112px; height: 112px; border-radius: 50%;
+  background: rgba(255, 255, 255, .88); border: 1px solid rgba(15, 23, 42, .16);
+  box-shadow: 0 10px 26px rgba(2, 6, 23, .28); backdrop-filter: blur(8px);
+  pointer-events: auto; cursor: grab; touch-action: none;
+}
+#svCompass:active { cursor: grabbing; }
+/* ★ 本批次（需求四·c）：刻度盘面容器随航向**反向旋转**（东南西北方向盘的转动模式），
+   中间的指针不参与旋转 ⇒ 恒指向屏幕正前方。
+   ★ v58（需求 5）：**刻度环与 4 个方位字都在这个旋转容器里** —— 方位字的**位置**
+   必须随航向走（朝向 296° 时「北」要转到右上 ~64°），否则就是「罗盘永远指正北」。
+   字面用「多组风车叠加」的第二层自转保持正立：每个 .svc-lbl 再转 +bearing
+   （JS 每帧把 bearing 写进 #svCompass 上的 --svc-ccw），两层角速度相等反向 ⇒ 净转动为 0，
+   字永远朝上；位置仍由外层盘面决定。 */
+#svCompass .svc-dial { position: absolute; inset: 0; transform-origin: 50% 50%; will-change: transform; }
+#svCompass .svc-ring { position: absolute; inset: 8px; border-radius: 50%; border: 1px dashed rgba(37, 99, 235, .35); }
+/* ★ 指针必须让**底端**落在圆心：transform-origin 是 50% 100%（底端），
+   所以元素要整体上移一个自身高度（margin-top: -40px）。
+   少了这一句就不是绕圆心转，而是绕「圆心下方 40px」转 —— 指针会跑偏到圆盘下缘。 */
+#svCompass .svc-needle {
+  position: absolute; left: 50%; top: 50%; width: 3px; height: 40px;
+  margin-left: -1.5px; margin-top: -40px;
+  border-radius: 2px; transform-origin: 50% 100%;
+  background: linear-gradient(180deg, #dc2626, #dc2626 50%, #94a3b8 50%, #94a3b8);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .8);
+}
+/* ★ v58（需求 5）：方位字已回到旋转盘面 .svc-dial 内 —— 位置随航向转（靠外层 rotate），
+   每个字再用 --svc-ccw（= +bearing，JS 每帧写入）自转抵消，字面恒正立。
+   transform-origin 保持元素自身中心（默认 50% 50%），故自转是「原地转」，
+   不会把字挪位；translateX/-Y 的居中量在自转之前生效，居中关系不变。 */
+#svCompass .svc-lbl { position: absolute; font-size: calc(11px * var(--ui) * var(--ui-fs)); font-weight: 700; color: var(--ink); }
+#svCompass .svc-lbl.n { left: 50%; top: 2px; transform: translateX(-50%) rotate(var(--svc-ccw, 0deg)); }
+#svCompass .svc-lbl.s { left: 50%; bottom: 2px; transform: translateX(-50%) rotate(var(--svc-ccw, 0deg)); }
+#svCompass .svc-lbl.e { right: 3px; top: 50%; transform: translateY(-50%) rotate(var(--svc-ccw, 0deg)); }
+#svCompass .svc-lbl.w { left: 3px; top: 50%; transform: translateY(-50%) rotate(var(--svc-ccw, 0deg)); }
+#svCompass .svc-read {
+  position: absolute; left: 50%; bottom: -22px; transform: translateX(-50%);
+  font-size: calc(11px * var(--ui) * var(--ui-fs)); color: #e2e8f0; white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .8);
+}
+#svFpHud .sv-fpbtns {
+  position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%);
+  display: flex; gap: 10px; pointer-events: auto;
+}
+#svFpHud .sv-fpbtns .btn { pointer-events: auto; }
+#svSunflower.on { background: #f59e0b; border-color: #f59e0b; color: #fff; }
+#svSunflower .sv-sf-tip {
+  position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%);
+  padding: 4px 10px; border-radius: 8px; background: rgba(2, 6, 23, .82); color: #fff;
+  font-size: calc(11px * var(--ui) * var(--ui-fs)); white-space: nowrap; opacity: 0; transition: opacity .15s ease;
+}
+#svSunflower:hover .sv-sf-tip { opacity: 1; }
+#svFpHud .sv-fpkeys {
+  position: absolute; left: 26px; bottom: 22px; color: #cbd5e1;
+  font-size: calc(11px * var(--ui) * var(--ui-fs)); line-height: 1.7;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .85);
+}
+
+/* ---------- 室内 / 退出按钮 ---------- */
+#svExitIndoor {
+  position: fixed; right: 26px; bottom: 26px; z-index: 27; display: none;
+}
+body[data-view="sun"].sv-indoor #svExitIndoor { display: inline-flex; }
+/* ★ v39（需求三）：退出太阳视运动综合视图 */
+#svExitCombo { position: fixed; right: 26px; bottom: 26px; z-index: 27; display: none; }
+body[data-view="sun"].sv-combo #svExitCombo { display: inline-flex; }
+/* ★ v44（需求八）：物影测量「退出显示」按钮 —— 仅在**测量图形正处于显示状态**时出现
+   （SunView 每帧更新 body[data-view="sun"].sv-meas）。与「退出室内」互斥（室内没有可测地面物），
+   但与「退出综合视图」可能同时出现 ⇒ 综合视图下抬高一行，避免两枚按钮叠在一起。 */
+#svExitMeas { position: fixed; right: 26px; bottom: 26px; z-index: 27; display: none; }
+body[data-view="sun"].sv-meas #svExitMeas { display: inline-flex; }
+body[data-view="sun"].sv-combo.sv-meas #svExitMeas { bottom: 70px; }
+
+/* ---------- 面板与悬浮窗开关列表 ----------
+   ★ v35（需求十五）：原顶部按钮弹层（#btnPanelMenu / #panelMenu）已删除，
+   开关列表迁入两棵设置菜单「界面与主题 › 面板与悬浮窗」的二级页（.pm-host 容器）。 */
+.pm-host h4 {
+  margin: 8px 0 5px; font-size: calc(11px * var(--ui) * var(--ui-fs));
+  color: var(--ink-faint); font-weight: 600; letter-spacing: .5px;
+}
+.pm-host h4:first-child { margin-top: 0; }
+.pm-host .pm-item { display: flex; align-items: center; gap: 8px; padding: 5px 7px;
+  border-radius: calc(7px * var(--ui)); cursor: pointer; font-size: calc(12px * var(--ui) * var(--ui-fs)); }
+.pm-host .pm-item:hover { background: rgba(37, 99, 235, .10); }
+.pm-host .pm-item input { margin: 0; flex: none; }
+.pm-host .pm-item > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* ★ v33：三个按钮一行放不下时**换行**，绝不允许被挤出面板右边界
+   （旧实现 全部显示 / 全部隐藏 / 恢复默认布局 三枚 xs 按钮在 --ui-fs 稍大时
+    总宽超过 244px，第三枚直接跑到面板外面）。 */
+.pm-host .pm-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.pm-host .pm-row .btn { flex: 1 1 auto; min-width: 0; justify-content: center; white-space: nowrap; }
+.pm-host .pm-item.pm-dis { opacity: .42; pointer-events: none; }
+
+/* ---------- 弹窗（属性 / 确认） ---------- */
+#svModalHost { position: fixed; inset: 0; z-index: 70; display: none; }
+#svModalHost.on { display: block; }
+#svModalHost .svm-mask { position: absolute; inset: 0; background: rgba(2, 6, 23, .42); }
+/* ★ v41（需求一·19）：弹窗整体放大一档（348 → 420px）并跟随界面缩放 --ui，
+   同时用 94vw / 86vh 兜底 —— 窄屏或界面字号放大时不再顶出屏幕。 */
+#svModalHost .svm-card {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: calc(420px * var(--ui)); max-width: 94vw;
+  padding: 0 calc(16px * var(--ui)) calc(14px * var(--ui));
+  --pad-x: calc(16px * var(--ui));
+  max-height: 86vh; overflow: auto; box-sizing: border-box;
+}
+#svModalHost .svm-body { padding-top: 8px; min-width: 0; }
+#svModalHost .svm-foot { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+#svModalHost .svm-foot .btn { min-width: calc(70px * var(--ui)); justify-content: center; }
+
+/* ---------- 对象操作菜单（双击模型） ---------- */
+#svObjMenu { position: fixed; z-index: 65; width: calc(178px * var(--ui)); padding: 8px 10px 10px; display: none; }
+#svObjMenu.on { display: block; }
+#svObjMenu .som-t { font-size: calc(12px * var(--ui) * var(--ui-fs)); font-weight: 700; margin-bottom: 6px;
+  padding-bottom: 5px; border-bottom: 1px dashed var(--line); }
+#svObjMenu button {
+  display: block; width: 100%; text-align: left; margin: 3px 0; padding: 6px 9px;
+  border: 1px solid var(--line); border-radius: calc(7px * var(--ui)); background: rgba(15, 23, 42, .03);
+  font: inherit; font-size: calc(12px * var(--ui) * var(--ui-fs)); color: var(--ink); cursor: pointer;
+}
+#svObjMenu button:hover { background: rgba(37, 99, 235, .12); border-color: rgba(37, 99, 235, .40); }
+#svObjMenu button.danger { color: var(--warn); }
+
+/* ---------- 地面方位标（DOM 覆盖层，固定在地面对应方位上） ---------- */
+#svDirMarks { position: fixed; inset: 0; pointer-events: none; z-index: 8; display: none; }
+body[data-view="sun"].sv-ground #svDirMarks { display: block; }
+#svDirMarks .svdm {
+  position: absolute; transform: translate(-50%, -50%);
+  font-size: calc(15px * var(--ui) * var(--ui-fs)); font-weight: 800; letter-spacing: 1px;
+  color: #fff; text-shadow: 0 2px 6px rgba(0, 0, 0, .85);
+}
+/* ★ v39（需求二·1·①）：去掉方向文字下方的白色短竖线（原 .svdm::after）——
+   只保留方位文字本身。 */
+#svDirMarks .svdm::after { content: none; display: none; }
+
+/* ---------- 室内方位标（v39 需求二·3）：与地面方向标同一开关（dmark.text）、同一套字符样式 ---------- */
+#svIndoorDirMarks { position: fixed; inset: 0; pointer-events: none; z-index: 8; display: none; }
+body[data-view="sun"].sv-indoor #svIndoorDirMarks { display: block; }
+#svIndoorDirMarks .svidm {
+  position: absolute; transform: translate(-50%, -50%);
+  font-size: calc(15px * var(--ui) * var(--ui-fs)); font-weight: 800; letter-spacing: 1px;
+  color: #fff; text-shadow: 0 2px 6px rgba(0, 0, 0, .85);
+}
+
+/* ---------- 状态提示（模式提示 / 校验提示） ---------- */
+#svToast {
+  position: fixed; left: 50%; top: calc(var(--dock-top) + 8px); transform: translateX(-50%);
+  z-index: 68; padding: 7px 16px; border-radius: 999px; display: none;
+  background: rgba(2, 6, 23, .84); color: #fff; font-size: calc(12px * var(--ui) * var(--ui-fs));
+  box-shadow: 0 8px 22px rgba(2, 6, 23, .4);
+}
+#svToast.on { display: block; }
+#svToast.warn { background: rgba(185, 28, 28, .9); }
+
+/* =====================================================================
+   ★ v39（需求三）：太阳视运动「综合视图」—— 多窗组合，窗口可拖拽 / 拉伸 / 自动铺满
+   ===================================================================== */
+/* ★ 需求一·1（v55 修正）：综合视图背景必须为**纯黑**。
+   覆盖层 z-index 5 仍低于面板（.card 10），面板照常浮于其上、可拖拽；
+   但背景由透明改为 #000 —— 使「标题行与顶栏之间」「窗格缝隙」均渲染为纯黑，
+   而非透出底层 3D 场景，满足「背景纯黑 / 标题行上方不渲染内容」。
+   窗格铺满策略由 comboInset / layoutSunCombo 决定（见 sunview.js）。 */
+#svComboUI { position: fixed; inset: 0; z-index: 5; display: none; pointer-events: none; background: #000; }
+body[data-view="sun"] #svComboUI.on { display: block; }
+#svComboUI .svc-cell {
+  position: absolute; pointer-events: auto; display: flex; flex-direction: column;
+  background: rgba(var(--panel-rgb, 255, 255, 255), var(--glass, .9));
+  border: 1px solid rgba(255, 255, 255, .22);
+  border-radius: calc(12px * var(--ui));
+  box-shadow: 0 10px 26px rgba(2, 6, 23, .16); overflow: hidden;
+}
+#svComboUI .svc-cell.dragging { box-shadow: 0 18px 40px rgba(2, 6, 23, .3); z-index: 30; }
+#svComboUI .svc-cell .card-head {
+  display: flex; align-items: center; gap: 6px; cursor: grab;
+  height: calc(30px * var(--ui));
+  padding: 0 calc(10px * var(--ui));
+  box-sizing: border-box;
+  /* ★ v60（需求 4）：与地球运动综合视图窗格表头 `#comboUI .ccell-h`
+     **同一套配色配方** —— 「半透明亮色渐变 叠在不透明黑底上」
+     ⇒ 顶部 rgb(41,41,41) → 底部 rgb(13,13,13)，即与地球侧一致的灰黑渐变。
+     此前这里是深藏青实色（rgba(15,23,42,.82/.68)）：色相偏蓝、且近乎实色，
+     与地球侧「近黑 + 轻微上亮渐变」的观感对不上，这正是用户本轮提出的差异。
+     底噪仍用不透明黑（#000），是因为本窗格的底色是浅色毛玻璃（.svc-cell 为白色 .9），
+     若只叠半透明渐变会得到浅灰白条 ⇒ 近白标题不可读。 */
+  background: linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .05)), #000;
+  border-bottom: 1px solid rgba(255, 255, 255, .12);
+  flex: none;
+}
+#svComboUI .svc-cell .card-head h2 {
+  position: relative; padding-left: calc(9px * var(--ui));
+  font-size: calc(15px * var(--ui) * var(--ui-fs)); font-weight: var(--ui-fw-b, 700);
+  color: #eaf2ff; letter-spacing: .5px;
+  margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* 与地球侧 .pane-h span::before 同款主题色竖条 */
+#svComboUI .svc-cell .card-head h2::before {
+  content: ""; position: absolute; left: 0; top: 50%;
+  transform: translateY(-50%);
+  width: 2.5px; height: calc(12px * var(--ui)); border-radius: 999px;
+  background: linear-gradient(180deg, #60a5fa, #22d3ee);
+}
+/* 标题右侧的「折叠 / 关闭」按钮在深底上要亮起来 */
+#svComboUI .svc-cell .card-head .link { color: rgba(226, 240, 255, .78); }
+#svComboUI .svc-cell .card-head .link:hover { color: #fff; }
+/* ★ v60（需求4）：折叠符号固定到表头**最右侧**（style.css `.card-head .link` 的
+   margin-left:auto 在此再显式声明一次，避免将来该通用规则变动时折叠符号跑回标题旁）；
+   折叠符号本身已是 v59 的**一条横线**（见 style.css `.link[data-ic="fold"]::before`）。 */
+#svComboUI .svc-cell .card-head .svc-fold { margin-left: auto; }
+#svComboUI .svc-grip { cursor: grab; color: rgba(226, 240, 255, .55); font-size: calc(13px * var(--ui)); }
+#svComboUI .svc-grip:hover { color: #fff; }
+
+/* ---------- 右上角「全局设置」统一区（一级分区可折叠，内容内联展开） ----------
+   参照参考图重做。层级与视觉：
+     一级 .gs-sec  圆角分区卡：图标 + 标题 + 副标题 + 右侧折叠箭头
+      内联 .gs-cap 小标题：纯文字 + 左侧细竖条（不可点击、无箭头，**不是二级菜单项**）
+      条目 .gs-row  开关行 / 控件行 / 按钮行（**全部直接内联**在一级分区正文里）
+   ★ 透明度联动：所有子元素底色统一 rgba(var(--panel-rgb), var(--glass-ctl))，
+     「面板背景不透明度」滑块一动，分组 / 行 / 按钮 / 滑块一起变。
+   ★ 深色模式：文字 / 描边一律走 var(--ink) / var(--line)（主题变量，随模式自动切白）。 */
+#flyPanelMenu2 { padding: calc(5px * var(--ui)) calc(7px * var(--ui)) calc(8px * var(--ui)); }
+
+/* ★ v61（需求4）：「全局设置」浮层的表头 —— 右上角「—」折叠符号（**单击它才隐藏浮层**）。
+   浮层内容由 fillGlobalSettings 整体重建，表头也在其中重建（见 sunview.js），
+   故这里只补两件事：① 表头吸顶（内容滚动时折叠符号始终可见 / 可点）；
+   ② 折叠按钮渲染为一横线（与各面板 .card-head .link[data-ic="fold"] 同一套图标语言）。 */
+#flyPanelMenu2 > .gs-fly-head { position: sticky; top: 0; z-index: 3; }
+#flyPanelMenu2 > .gs-fly-head .fly-close { font-size: 0 !important; }
+#flyPanelMenu2 > .gs-fly-head .fly-close::before {
+  content: ""; width: calc(13px * var(--ui)); height: calc(2px * var(--ui));
+  border-radius: calc(1px * var(--ui)); background: currentColor;
+}
+.gs-sec {
+  margin: 0 0 calc(4px * var(--ui));
+  border: 1px solid var(--line); border-radius: calc(11px * var(--ui));
+  background: rgba(var(--panel-rgb, 255, 255, 255), calc(var(--glass-ctl, .83) * .55));
+  overflow: hidden;
+}
+.gs-sec-h {
+  display: flex; align-items: center; gap: calc(8px * var(--ui)); width: 100%;
+  padding: calc(5px * var(--ui)) calc(9px * var(--ui));
+  border: 0; border-bottom: 1px solid var(--line);
+  background: rgba(var(--panel-rgb, 255, 255, 255), var(--glass-ctl, .83));
+  color: var(--ink); font-family: inherit; text-align: left; cursor: pointer;
+}
+.gs-sec-h:hover { background: rgba(var(--panel-rgb, 255, 255, 255), calc(var(--glass-ctl, .83) * .82)); }
+.gs-ico { font-style: normal; font-size: calc(15px * var(--ui) * var(--ui-fs)); line-height: 1; flex: none; }
+.gs-sec-t { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; gap: 1px; }
+.gs-sec-t b { font-size: calc(13px * var(--ui) * var(--ui-fs)); font-weight: var(--ui-fw-b, 700); color: var(--ink); }
+.gs-sec-t em {
+  font-style: normal; font-size: calc(10.5px * var(--ui) * var(--ui-fs));
+  color: var(--ink-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.gs-chev {
+  flex: none; color: var(--ink-faint); font-size: calc(12px * var(--ui));
+  transition: transform .16s ease; transform: rotate(0deg);
+}
+.gs-folded > .gs-sec-h .gs-chev { transform: rotate(-90deg); }
+.gs-sec-b { padding: calc(4px * var(--ui)); display: flex; flex-direction: column; gap: calc(2px * var(--ui)); }
+.gs-sec.gs-folded > .gs-sec-b { display: none; }
+.gs-sec.gs-folded > .gs-sec-h { border-bottom-color: transparent; }
+
+/* ---- 内联小标题（.gs-cap）—— 不是二级菜单项 ----
+   纯文字 + 左侧细竖条，**不可点击、无折叠箭头**；只用于把同一一级分区下相邻的
+   控件行分组（例如 6 个文字属性块），保证展开后一眼能看出属性分界。 */
+.gs-cap {
+  display: flex; align-items: center; gap: calc(6px * var(--ui));
+  margin: calc(4px * var(--ui)) 0 calc(1px * var(--ui));
+  padding-left: calc(7px * var(--ui));
+  border-left: 2px solid var(--accent, #2563eb);
+  font-size: calc(11px * var(--ui) * var(--ui-fs));
+  font-weight: var(--ui-fw-m, 600); color: var(--ink-dim);
+  letter-spacing: .3px; user-select: none;
+}
+.gs-cap > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- 条目行（开关行 / 控件行 / 按钮行，直接内联） ---- */
+.gs-row {
+  display: flex; align-items: center; gap: calc(8px * var(--ui));
+  width: 100%; box-sizing: border-box;
+  padding: calc(3px * var(--ui)) calc(9px * var(--ui));
+  border: 1px solid var(--line); border-radius: calc(8px * var(--ui));
+  /* ★ 透明度联动：行底色引用 --glass-ctl，滑块一动即同步 */
+  background: rgba(var(--panel-rgb, 255, 255, 255), var(--glass-ctl, .83));
+  color: var(--ink);
+}
+.gs-row:hover { background: rgba(var(--panel-rgb, 255, 255, 255), calc(var(--glass-ctl, .83) * .80)); }
+.gs-row .gs-lab {
+  flex: 1 1 auto; min-width: 0;
+  font-size: calc(12px * var(--ui) * var(--ui-fs)); color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.gs-sw { cursor: pointer; }
+/* ★ 本批次（需求五）：胶囊形开关（严格按参考图）—— 轨道 + 滑块，
+   开 = 主题色实心 + 滑块右移；关 = 灰轨 + 滑块居左。 */
+.gs-sw input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none; flex: none; margin: 0;
+  width: calc(30px * var(--ui)); height: calc(17px * var(--ui));
+  border-radius: 999px; position: relative; cursor: pointer;
+  background: rgba(15, 23, 42, .22); transition: background .16s ease;
+}
+.gs-sw input[type="checkbox"]::after {
+  content: ""; position: absolute; left: calc(2px * var(--ui)); top: 50%;
+  width: calc(13px * var(--ui)); height: calc(13px * var(--ui)); border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .32);
+  transform: translateY(-50%); transition: transform .16s ease;
+}
+.gs-sw input[type="checkbox"]:checked { background: var(--accent, #2563eb); }
+.gs-sw input[type="checkbox"]:checked::after {
+  transform: translate(calc(13px * var(--ui)), -50%);
+}
+.gs-sw input[type="checkbox"]:focus-visible { outline: 2px solid var(--accent, #2563eb); outline-offset: 2px; }
+.gs-btns { gap: calc(6px * var(--ui)); }
+.gs-btns .btn { flex: 1 1 auto; }
+.gs-sel {
+  flex: 0 0 auto; width: calc(146px * var(--ui)); max-width: 54%;
+  font-size: calc(11.5px * var(--ui) * var(--ui-fs)); font-family: inherit;
+  padding: calc(3px * var(--ui)) calc(5px * var(--ui));
+  border: 1px solid var(--line); border-radius: calc(6px * var(--ui));
+  background: rgb(var(--panel-rgb, 255, 255, 255)); color: var(--ink);
+}
+.gs-sel option { background: rgb(var(--panel-rgb, 255, 255, 255)); color: var(--ink); }
+.gs-rng { flex: 1 1 auto; min-width: calc(70px * var(--ui)); accent-color: var(--accent, #2563eb); }
+.gs-out {
+  flex: 0 0 auto; min-width: calc(44px * var(--ui)); text-align: right;
+  font-style: normal; font-size: calc(11px * var(--ui) * var(--ui-fs));
+  color: var(--ink-dim); font-variant-numeric: tabular-nums;
+}
+.gs-clr {
+  flex: 0 0 auto; width: calc(44px * var(--ui)); height: calc(22px * var(--ui));
+  padding: 0; border: 1px solid var(--line); border-radius: calc(5px * var(--ui));
+  background: none; cursor: pointer;
+}
+/* 面板内按钮也跟随透明度（--glass-ctl 由「面板背景不透明度」派生） */
+#flyPanelMenu2 .btn {
+  background: rgba(var(--panel-rgb, 255, 255, 255), var(--glass-ctl, .83));
+  color: var(--ink); border-color: var(--line);
+}
+#flyPanelMenu2 .btn:hover { background: rgba(var(--panel-rgb, 255, 255, 255), calc(var(--glass-ctl, .83) * .78)); }
+#svComboUI .svc-cell .card-body { flex: 1 1 auto; min-height: 0; position: relative; }
+#svComboUI .svc-cell canvas { display: block; width: 100%; height: 100%; }
+/* ★ 修复 #17：综合窗格（可拖拽 / 滚轮缩放 / 双击复位）目前未设 tabindex，故鼠标之外无法聚焦。
+   这里先补上 `:focus-visible` 反馈（窗格容器或 canvas 日后若被设为可聚焦即自动生效，无副作用）。 */
+#svComboUI .svc-cell:focus-visible,
+#svComboUI .svc-cell canvas:focus-visible { outline: 2px solid #7cc4ff; outline-offset: -2px; }
+#svComboUI .svc-resize {
+  position: absolute; right: 0; bottom: 0; width: calc(18px * var(--ui)); height: calc(18px * var(--ui));
+  cursor: nwse-resize; z-index: 3;
+  background: linear-gradient(135deg, transparent 46%, var(--ink-faint) 46%, var(--ink-faint) 56%, transparent 56%,
+              transparent 66%, var(--ink-faint) 66%, var(--ink-faint) 76%, transparent 76%);
+  opacity: .6;
+}
+/* 选择对话框 */
+.svm-pick-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 16px; }
+.svm-pick-item { display: flex; align-items: center; gap: 8px; font-size: calc(13px * var(--ui) * var(--ui-fs)); cursor: pointer; }
+.svm-hint { margin-top: 10px; font-size: calc(11.5px * var(--ui) * var(--ui-fs)); color: var(--ink-faint); }
+
+
+
+/* ★ 本批次（需求三）：深色模式下把窗口边框提亮，保证黑底上轮廓依然清晰
+   （浅色模式用 rgba(255,255,255,.22) 即可；深色模式场景本身较暗，需更高不透明度）。
+   浅 / 深两套只改这一个变量，标题栏本身已是深底亮字，两种模式下都可读。 */
+body[data-mode="dark"] { --sv-frame-line: rgba(255, 255, 255, .30); }
+body[data-mode="light"] { --sv-frame-line: rgba(15, 23, 42, .22); }
