@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>地理3D实验室——地球运动&太阳视运动</title>
+<!-- 内联 SVG 图标（Data URI）：避免浏览器自动请求 /favicon.ico 产生 404，同时让标签页有地球图标 -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%232f8be0'/%3E%3Cpath d='M10 7c3-1 5 1 5 3s-2 3-4 5-2 5-4 5-3-3-2-5 2-9 5-8Z' fill='%2357cf8a'/%3E%3Cpath d='M19 7c3-1 6 0 7 2s-1 3-3 4-4 0-5-1-1-3 1-5Z' fill='%2357cf8a'/%3E%3Cpath d='M17 15c2 0 4 1 4 3s-1 5-3 6-3-1-3-4 1-5 2-5Z' fill='%2357cf8a'/%3E%3C/svg%3E" />
+<link rel="stylesheet" href="style.css" />
+<!-- v30：太阳视运动模块样式（与自转 / 公转窗口同一套毛玻璃风格） -->
+<link rel="stylesheet" href="sunview.css" />
+</head>
+<body>
+  <canvas id="gl" tabindex="0" role="img" aria-label="地球三维视图：拖动旋转，滚轮缩放，方向键旋转"></canvas>
+
+  <!-- 顶部标题栏（横贯整窗） -->
+  <header id="titleBar">
+    <!-- v20.0：左侧「自转」文字徽标改为地球图片（内联 SVG，随视图高亮，无外部资源依赖）；
+         标题下的小字副标题已按要求删除，标题与制作者徽标同处一行。 -->
+    <div class="title-badge" id="badgeView" title="当前视图：自转演示">
+      <svg viewBox="0 0 32 32" aria-hidden="true">
+        <defs>
+          <radialGradient id="globeG" cx="34%" cy="28%" r="78%">
+            <stop offset="0" stop-color="#a8e4ff"/><stop offset="52%" stop-color="#2f8be0"/><stop offset="1" stop-color="#0f4c86"/>
+          </radialGradient>
+        </defs>
+        <circle cx="16" cy="16" r="15" fill="url(#globeG)"/>
+        <path d="M10.4 7.2c1.9-.9 3.9-.1 4.4 1.5s-1.3 3.4-2.3 5.3-1.3 4.8-2.7 5.3-2.6-1.9-2.2-3.9 1-6.4 2.8-8.2Z" fill="#57cf8a"/>
+        <path d="M19.2 6.6c2.6-.7 5.2.3 6.2 1.9s-.5 3.1-2.4 3.7-3.7.3-4.7-.7-.9-2.5.9-4.9Z" fill="#57cf8a"/>
+        <path d="M17.4 14.2c2 0 4 1 4.6 3s-.6 5-2.4 6-3.4-1.4-3.8-3.6.9-5.4 1.6-5.4Z" fill="#57cf8a"/>
+        <ellipse cx="11.5" cy="10.5" rx="4.6" ry="3.1" fill="#ffffff" opacity=".18" transform="rotate(-28 11.5 10.5)"/>
+      </svg>
+    </div>
+    <div class="tb-text">
+      <div class="tb-line">
+        <!-- ★ v40（需求七）：标题改为「地理3D实验室——地球运动&太阳视运动」，
+             其中「地理3D实验室」为主名（放大字号 + 渐变强调），破折号后半为副名。 -->
+        <h1>
+          <span class="tb-brand">地理3D实验室</span>
+          <span class="tb-dash">——</span>
+          <span class="tb-sub">地球运动&amp;太阳视运动</span>
+        </h1>
+        <span class="tb-by" title="制作者"><em class="eg">✨</em>要可爱不耍赖</span>
+      </div>
+    </div>
+    <!-- ★ v41（需求三.1/三.2）：右上角总菜单**改为一行显示** ——
+         一级（模块）与二级（视图）并排在同一行：🌍地球运动 | 自转视图▾ 公转视图▾ 综合视图▾
+         点击一级按钮切模块；点击二级按钮切视图；点击行末 ▾ 展开该视图的窗口选项
+         ★ 本批次（需求二）：顶部菜单栏重排 ——
+         一级（模块：地球运动 / 太阳视运动）绝对居中于标题栏；
+         **二级（视图）菜单整体移到「沉浸模式」按钮左侧紧邻放置**，
+         三级层次通过「实心高亮 vs 描边弱化 + 左侧层级竖条 + 内嵌托盘底色」区分。
+         点击行为与样式沿用原有 .tbm2-lv2grp / .tbm2-lv2 / .tbm2-more / .tbm2-drop。 -->
+    <div class="title-views tbm2" id="segView">
+      <div class="tbm2-row">
+        <span class="tbm2-modes" id="tbm2Modes">
+          <button class="tbm2-lv1" type="button" data-lv1="earth">🌍 地球运动</button>
+          <button class="tbm2-lv1" type="button" data-lv1="sun">☀️ 太阳视运动</button>
+        </span>
+      </div>
+    </div>
+    <!-- 二级视图菜单容器：靠 margin-left:auto 推到右侧，紧贴「沉浸模式」 -->
+    <div class="tbm2-lv2host" id="tbm2Lv2Host">
+      <!-- 地球运动：二级视图（仅当前模块显示） -->
+      <div class="tbm2-lv2grp" data-lv2grp="earth">
+        <div class="tbm2-lv2" data-lv2="rotate">
+          <button class="tbm2-lv2btn" type="button" data-view="rotate">自转视图</button>
+          <button class="tbm2-more" type="button" title="窗口选项">▾</button>
+          <!-- 自转视图的窗口数量：单窗 / 三窗 -->
+          <div class="tbm2-drop" id="dropMode">
+            <button data-mode="single" class="on">单窗</button>
+            <button data-mode="triple">三窗</button>
+          </div>
+        </div>
+        <div class="tbm2-lv2" data-lv2="revolve">
+          <button class="tbm2-lv2btn" type="button" data-view="revolve">公转视图</button>
+          <button class="tbm2-more" type="button" title="窗口选项">▾</button>
+          <!-- 公转视图的镜头：全景 / 特写 -->
+          <div class="tbm2-drop" id="dropOrbCam">
+            <button data-orbcam="global" class="on">全景</button>
+            <button data-orbcam="close">特写</button>
+          </div>
+        </div>
+        <div class="tbm2-lv2" data-lv2="combo">
+          <button class="tbm2-lv2btn" type="button" data-view="combo">综合视图</button>
+          <button class="tbm2-more" type="button" title="显示规则">▾</button>
+          <!-- 综合视图的显示规则：一致 / 简洁（★ v40 默认「简洁」） -->
+          <div class="tbm2-drop" id="dropComboMode">
+            <button data-combomode="consistent">一致</button>
+            <button data-combomode="simple" class="on">简洁</button>
+          </div>
+        </div>
+      </div>
+      <!-- 太阳视运动：二级视图 -->
+      <div class="tbm2-lv2grp" data-lv2grp="sun" id="segSunView">
+        <div class="tbm2-lv2" data-lv2="ground">
+          <button class="tbm2-lv2btn" type="button" data-sunview="ground">地面视图</button>
+        </div>
+        <div class="tbm2-lv2" data-lv2="sky">
+          <button class="tbm2-lv2btn" type="button" data-sunview="sky">天球视图</button>
+        </div>
+        <div class="tbm2-lv2" data-lv2="combo">
+          <button class="tbm2-lv2btn" type="button" data-sunview="combo">综合视图</button>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn tb-immersive" id="btnImmersive" type="button" title="沉浸模式：隐藏所有面板与标题栏，只看地球（Esc 退出）">
+      <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9M20 9V5.5A1.5 1.5 0 0 0 18.5 4H15M4 15v3.5A1.5 1.5 0 0 0 5.5 20H9M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="txi">沉浸模式</span>
+    </button>
+    <button class="btn tb-panelmenu" id="btnPanelMenu2" type="button" title="全局设置：面板与悬浮窗 · 面板文字样式 · 全局文字样式 · 重置所有设置">
+      <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2.6v3M12 18.4v3M2.6 12h3M18.4 12h3M5.4 5.4l2.1 2.1M16.5 16.5l2.1 2.1M18.6 5.4l-2.1 2.1M7.5 16.5l-2.1 2.1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <span class="txi">全局设置</span>
+    </button>
+    <div class="opt-fly" id="flyPanelMenu2" role="menu" aria-label="面板与悬浮窗"></div>
+    <!-- v40：旧的独立分段按钮（单窗/三窗、全景/特写、一致/简洁）已迁入上方二级菜单下拉，
+         这里保留隐藏容器以兼容既有脚本对 id 的查询（不显示）。 -->
+    <div class="seg tbm2-hidden" id="segMode" aria-hidden="true">
+      <button data-mode="single" class="on">单窗</button>
+      <button data-mode="triple">三窗</button>
+    </div>
+    <div class="seg tbm2-hidden" id="segOrbCam" aria-hidden="true" title="公转视图的镜头：全景看整条公转轨道 / 特写跟随地球">
+      <button data-orbcam="global" class="on">全景</button>
+      <button data-orbcam="close">特写</button>
+    </div>
+    <div class="seg tbm2-hidden" id="segComboMode" aria-hidden="true" title="显示规则：一致 / 简洁">
+      <button data-combomode="consistent">一致</button>
+      <button data-combomode="simple" class="on">简洁</button>
+    </div>
+
+    <!-- ★ v35（需求十五）：原右上角【面板与悬浮窗】按钮已移除 ——
+         入口迁入两棵设置菜单：主模块「设置 › 界面与主题 › 面板与悬浮窗」与
+         太阳侧「界面与主题 › 面板与悬浮窗」，开关内容与原先完全一致。 -->
+  </header>
+
+  <!-- v30：太阳视运动画布（进入该视图时显示；主模块 #gl 同时让位） -->
+  <canvas id="svCanvas"></canvas>
+
+  <!-- ★ 本批次（需求四）：太阳视运动**单视图**（地面 / 天球 / 室内 / 第一人称）的标题栏。
+       样式与地球运动视图的 `.pane-h` / `#comboUI .ccell-h` 完全同一套语言
+       （30px 高 · 左侧主题色竖条 · 亮色标题 + 提示文字 · 1px 亮色描边），
+       此前太阳侧单视图裸奔一个画布、没有任何标题与边框。综合视图各窗格见
+       sunview.js buildSunCombo（.svc-cell > .card-head，已同步为同一套样式）。 -->
+  <div id="svViewHead" aria-hidden="true">
+    <span class="sv-vh-t" id="svVhTitle">地面视图</span>
+    <i class="sv-vh-hint" id="svVhHint">拖动旋转 · 滚轮/双指缩放</i>
+  </div>
+
+  <!-- ★ 本批次（需求三）：太阳视运动单视图的**完整窗口边框** ——
+       地球运动视图的窗格是「四边 1px 描边 + 圆角 + 内阴影 + 顶部标题条」，
+       太阳侧此前只有一个标题条、四周裸奔。这里补一个与 `.pane` 同款语言的
+       #svFrame 覆盖层：只画边框（pointer-events:none，不挡画布操作），
+       标题条 #svViewHead 排在其**顶部内侧**，于是「标题栏 + 四周边框」构成一个
+       完整窗口；窗口上沿 = 地球侧窗格上沿（同一 JS 口径），不会错位。
+       综合视图各窗格自带 .card-head 描边，不需要这层，故由 CSS 让位。 -->
+  <div id="svFrame" aria-hidden="true"></div>
+
+  <!-- 视窗边框与标题（自转视图 / 公转视图；表头样式与综合视图子窗口一致） -->
+  <div id="panes">
+    <div class="pane" id="paneMain">
+      <div class="pane-h"><span>地球侧视</span><i class="p-hint">拖动旋转 · 滚轮/双指缩放</i></div>
+    </div>
+    <div class="pane" id="paneNorth">
+      <div class="pane-h"><span>北极俯视</span><i class="p-hint" id="hintNorth">—</i></div>
+    </div>
+    <div class="pane" id="paneSouth">
+      <div class="pane-h"><span>南极俯视</span><i class="p-hint" id="hintSouth">—</i></div>
+    </div>
+    <!-- v23.18（需求③）：公转视图的窗口标题条（全景 / 特写两种镜头共用同一条，
+         切换镜头时只换文字、不重排，故首行标题平稳过渡、无跳动） -->
+    <div class="pane" id="paneOrb">
+      <div class="pane-h"><span id="orbPaneTitle">地球公转 · 全景</span><i class="p-hint" id="orbPaneHint">拖动旋转 · 滚轮/双指缩放</i></div>
+    </div>
+  </div>
+
+  <!-- 三窗模式的分隔条（可拖动调整窗口大小） -->
+  <div class="splitter vert" id="spVert" title="拖动调整左右宽度 · 双击复位"><i></i></div>
+  <div class="splitter horz" id="spHorz" title="拖动调整上下高度 · 双击复位"><i></i></div>
+
+  <!-- 右上角：时间面板 -->
+  <section id="timeCard" class="card">
+    <div class="card-head tc-head">
+      <h2><i class="hd-ico">🕐</i>时间</h2>
+      <output class="dim" id="tMini">—</output>
+      <button class="link" id="btnTcCollapse" data-ic="fold">折叠</button>
+    </div>
+    <div class="t-block">
+      <div class="t-main">
+        <span id="tDate">—</span>
+        <span id="tClock">--:--:--</span>
+      </div>
+      <div class="t-sub">
+        <span id="tMeta">—</span>
+        <button class="link" id="btnNow">同步此刻</button>
+      </div>
+    </div>
+
+    <div class="terms" id="termChips"></div>
+    <div class="term-note" id="termNote">—</div>
+
+    <div class="sb">
+      <div class="sb-head"><label for="rngDate">日期<span class="dim">（含二分二至）</span></label><output id="outDate">—</output></div>
+      <input type="range" id="rngDate" min="1" max="365" step="1" value="1" />
+      <div class="ticks" id="dateTicks"></div>
+    </div>
+
+    <div class="sb">
+      <div class="sb-head"><label for="rngHour">时刻<span class="dim">（24 小时）</span></label><output id="outHour">—</output></div>
+      <input type="range" id="rngHour" min="0" max="1439" step="1" value="0" />
+      <div class="ticks" id="hourTicks"></div>
+    </div>
+
+    <!-- v31（需求九）：时间「年月日 / 时分秒」可自定义 —— 输入后点「应用」即跳转到该时刻
+         v32（需求二）：排版明确改为**年月日一行、时分秒一行**，并修复「输入被实时同步覆盖」导致的失效 -->
+    <div class="sb sb-custom">
+      <div class="sb-head"><label>自定义时间</label>
+        <button class="link" id="btnTApply" type="button">应用</button></div>
+      <div class="t-custom t-c3">
+        <input type="number" id="tInY" step="1" title="年" /><span class="tc-u">年</span>
+        <input type="number" id="tInMo" min="1" max="12" step="1" title="月" /><span class="tc-u">月</span>
+        <input type="number" id="tInD" min="1" max="31" step="1" title="日" /><span class="tc-u">日</span>
+      </div>
+      <div class="t-custom t-c3">
+        <input type="number" id="tInH" min="0" max="23" step="1" title="时" /><span class="tc-u">:</span>
+        <input type="number" id="tInMi" min="0" max="59" step="1" title="分" /><span class="tc-u">:</span>
+        <input type="number" id="tInS" min="0" max="59" step="1" title="秒" />
+      </div>
+    </div>
+
+    <div class="facts">
+      <div id="fSubLatBox"><b id="fDecl">—</b><i>太阳直射点纬度</i></div>
+      <div id="fSubLonBox"><b id="fSubLon">—</b><i>直射点经度</i></div>
+      <div id="fPolarDayBox"><b id="fPolarDay">—</b><i>极昼纬度范围</i></div>
+      <div id="fPolarNightBox"><b id="fPolarNight">—</b><i>极夜纬度范围</i></div>
+      <div id="fObliqBox"><b id="fObliq">—</b><i>黄赤交角</i></div>
+      <div id="fTiltBox"><b id="fTilt">—</b><i>地轴倾角</i></div>
+      <!-- v29（需求③）：地球公转面积速度（dA/dt，开普勒第二定律，恒定）——
+           移至时间面板，显隐由「光照系统 › 天文数据读取」控制 -->
+      <div class="fact-wide" id="fOrbAreaBox"><b id="fOrbArea">—</b><i>地球公转面积速度</i></div>
+      <!-- v29（需求④）：瞬时线速度 / 角速度分两行显示，避免单行拥挤 -->
+      <div class="fact-wide" id="fOrbVBox">
+        <b id="fOrbV1">—</b>
+        <b id="fOrbV2">—</b>
+        <i>地球公转瞬时线速度 / 角速度</i>
+      </div>
+      <div class="fact-wide"><b id="fSeason">—</b><i>所处时段</i></div>
+    </div>
+  </section>
+
+  <!-- 左侧：显示设置（v4.3 统一三级菜单：
+       一级行点击 → 二级菜单在其下方容器内展开；
+       二级行点击 → 三级菜单+控制项浮层在面板右侧展开（全局互斥）；
+       三级标题点击 → 控制项在其下方向下展开；
+       鼠标移出菜单范围自动收起） -->
+  <section id="optsCard" class="card">
+    <div class="card-head">
+      <h2><i class="hd-ico">🎛️</i>设置</h2>
+      <button class="link" id="btnCollapse" data-ic="fold">收起</button>
+    </div>
+    <div class="card-body" id="optsBody">
+
+      <nav class="opt-menu" id="optMenu"></nav>
+        <!-- 二级内容窗口由 menu.js 按 MENU 数据结构生成后挂到这里 -->
+        <div id="flyHost"></div>
+        <!-- ★ v62（需求 2）：此处原有【全局按钮】「重置所有设置」(#preReset) 已移除 ——
+             地球侧菜单不再自带重置入口，统一归到右上角「全局设置」浮层里的
+             「重置所有设置」（该入口同时重置地球侧与太阳侧两个模块）。 -->
+
+  </section>
+
+  <!-- 底部控制条 -->
+  <footer id="controlBar">
+    <!-- v32（需求十一）：控制条可整体拖动 —— 左侧抓手，双击抓手复位到默认位置 -->
+    <span class="cb-grip" id="cbGrip" title="按住拖动移动控制条 · 双击复位到默认位置" aria-hidden="true">⠿</span>
+    <button class="cb-toggle" id="cbToggle" title="收起 / 展开控制条"><span class="arr">▾</span><span class="txt">收起</span></button>
+    <div class="cb-group">
+      <button class="btn play" id="btnPlay">
+        <svg viewBox="0 0 24 24" id="iconPlay" width="16" height="16" aria-hidden="true"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>
+        <span id="playLabel">暂停</span>
+      </button>
+      <div class="speed">
+        <label for="rngSpeed">模拟速度</label>
+        <input type="range" id="rngSpeed" min="0" max="1000" step="1" title="模拟倍率 100× ~ 5,000,000×（对数刻度）" />
+        <output id="outSpeed">—</output>
+      </div>
+    </div>
+
+    <span class="cb-sep"></span>
+
+    <div class="cb-group">
+      <span class="cb-cap">视角</span>
+      <button class="btn" id="btnViewDefault">默认视角</button>
+      <button class="btn" id="btnViewEquator">赤道上空</button>
+    </div>
+
+    <span class="cb-sep"></span>
+
+    <div class="cb-group">
+      <span class="cb-cap">参考系</span>
+      <div class="seg" id="segFrame">
+        <button data-frame="sun" class="on" title="太阳光固定在右侧，地轴随公转摆动">光线固定</button>
+        <button data-frame="earth" title="地轴竖直向上不动，地球自转，太阳在右侧">地轴固定</button>
+      </div>
+    </div>
+
+    <span class="cb-sep"></span>
+
+    <div class="cb-group">
+      <button class="btn warn" id="btnResetAll">重置所有设置</button>
+    </div>
+  </footer>
+
+  <!-- v26.1（需求⑦）：选点模式提示条 —— 进入「标记点 / 球面最短距离」这类需要在地球上
+       取点的模式后，屏幕顶部常驻一条提示，写明当前处于选点模式以及具体选哪一种点。
+       观测点定位不算选点模式（它是「查询」而非「放置要素」），故不出现。 -->
+  <div id="pickTip" hidden>
+    <i class="pt-ico">🎯</i>
+    <span class="pt-t"></span>
+    <button class="pt-x" id="btnPickTipExit" type="button">退出标记模式</button>
+  </div>
+
+  <!-- 综合视图：可拖拽分隔条 + 可折叠子窗口 -->
+  <div id="comboUI"></div>
+  <!-- 观测点数据面板：默认位于时间面板左侧，风格与其它浮窗一致，可折叠 / 可拖动 -->
+  <section id="geoInfo" class="card"></section>
+
+  <div id="loading">正在加载贴图…</div>
+
+  <!-- 沉浸模式：退出按钮（右上角；默认隐藏，鼠标靠近右上角时显示，Esc 亦可退出） -->
+  <button class="imm-exit" id="btnExitImm" type="button" title="退出沉浸模式（Esc）">
+    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M9 4H5.5A1.5 1.5 0 0 0 4 5.5V9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15M15 20h3.5a1.5 1.5 0 0 0 1.5-1.5V15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span>退出沉浸</span>
+  </button>
+
+  <script src="vendor/three.min.js" defer></script>
+  <script src="assets-data.js" defer></script>
+  <!-- v26.1（需求②）：海陆分布 / 七大洲的掩膜贴图内嵌（Data URI，window.EARTH_GEO.reg）——
+       此前它们是外链 PNG，一旦丢失，app.js 会静默回落到「全黑掩膜」，
+       图层看起来「开着」却什么都不画，且界面上毫无提示。
+       ★ v53：掩膜改为**单一一张** geo-reg.png（R=大洲索引 / G=海岸距离场 / B=洲界距离场），
+       七大洲填色、统一陆地填充、海岸线、大洲界线**全部由它派生**。
+       原先并行的第二套矢量数据 assets/coast-vectors.js（全球海岸线 + 7 大洲边界合并数组）
+       已整体废弃并移除加载 —— 它的洲界数组与洲索引无关，正是「填色与描边错配」的根源。 -->
+  <script src="assets-geo.js" defer></script>
+  <script src="menu-ctrls.js" defer></script>
+  <script src="menu.js" defer></script>
+  <script src="app.js" defer></script>
+
+  <!-- =========================================================================
+       v30：太阳视运动模块的 DOM 骨架
+       （面板一律沿用 .card 毛玻璃外观；拖动 / 边缘拉伸 / 折叠 / 关闭 / 位置记忆
+         由 sunview.js 的 makeFloatPanel() 统一接管）
+       ====================================================================== -->
+
+  <!-- 左上：太阳视运动设置 / 地面物体 / 光照与太阳光线（三级折叠菜单，含二级浮层） -->
+  <section id="svOptsCard" class="card sv-only sv-on">
+    <div class="card-head">
+      <h2><i class="hd-ico">🧭</i>太阳视运动设置</h2>
+      <button class="link" id="svBtnCollapse" data-ic="fold">收起</button>
+    </div>
+    <div class="card-body">
+      <nav class="opt-menu" id="svOptMenu"></nav>
+      <div id="svFlyHost"></div>
+    </div>
+  </section>
+
+  <!-- 右上：时间面板（v31 需求二十一：与自转 / 公转 / 综合视图的「时间」面板同款结构 ——
+       年月日 + 时分秒 + 节气；另在显著位置单独标注「当地地方太阳时」） -->
+  <section id="svTimeTop" class="card sv-only sv-on">
+    <div class="card-head tc-head">
+      <h2><i class="hd-ico">🕐</i>时间</h2>
+      <output class="dim" id="svTtMini">—</output>
+      <button class="link" id="svTtCollapse" data-ic="fold">折叠</button>
+    </div>
+    <!-- ★ v35（需求十四）：正文包一层 .svtt-body —— 折叠时整体隐藏 + 滚动兜底的锚点 -->
+    <div class="svtt-body">
+    <div class="t-block">
+      <div class="t-main">
+        <span id="svTtDate">—</span>
+        <span id="svTtClock">--:--:--</span>
+        <!-- ★ v35（需求十六）：明确标注「北京时间」（与主模块 timeCard 同源的本地时区时钟） -->
+        <i class="t-tag">北京时间</i>
+      </div>
+      <div class="t-sub">
+        <span id="svTtMeta">—</span>
+        <button class="link" id="svBtnNow">同步此刻</button>
+      </div>
+    </div>
+    <div class="terms" id="svTtTerms"></div>
+    <div class="term-note" id="svTermTx">—</div>
+    <div class="svtt-lst">
+      <i>当地地方太阳时</i><b id="svLstBig">--:--:--</b>
+    </div>
+    <!-- ★ v35（需求十六）：以下三块与主模块 timeCard 完全一致（日期滑块含二分二至刻度 /
+         时刻滑块（北京时间 · 24 小时）/ 自定义时间），数据同源、两处滑块拖任意一处都同步 -->
+    <div class="sb">
+      <div class="sb-head"><label for="svTtRngDate">日期<span class="dim">（含二分二至）</span></label><output id="svTtOutDate">—</output></div>
+      <input type="range" id="svTtRngDate" min="1" max="365" step="1" value="1" />
+      <div class="ticks" id="svTtDateTicks"></div>
+    </div>
+    <div class="sb">
+      <div class="sb-head"><label for="svTtRngHour">时刻<span class="dim">（北京时间 · 24 小时）</span></label><output id="svTtOutHour">—</output></div>
+      <input type="range" id="svTtRngHour" min="0" max="1439" step="1" value="0" />
+      <div class="ticks" id="svTtHourTicks"></div>
+    </div>
+    <div class="sb sb-custom">
+      <div class="sb-head"><label>自定义时间</label>
+        <button class="link" id="svTtApply" type="button">应用</button></div>
+      <div class="t-custom t-c3">
+        <input type="number" id="svTtInY" step="1" title="年" /><span class="tc-u">年</span>
+        <input type="number" id="svTtInMo" min="1" max="12" step="1" title="月" /><span class="tc-u">月</span>
+        <input type="number" id="svTtInD" min="1" max="31" step="1" title="日" /><span class="tc-u">日</span>
+      </div>
+      <div class="t-custom t-c3">
+        <input type="number" id="svTtInH" min="0" max="23" step="1" title="时" /><span class="tc-u">:</span>
+        <input type="number" id="svTtInMi" min="0" max="59" step="1" title="分" /><span class="tc-u">:</span>
+        <input type="number" id="svTtInS" min="0" max="59" step="1" title="秒" />
+      </div>
+    </div>
+    <!-- ★ v38（需求三）：天文数据读数 —— 与主模块 #timeCard 的 .facts 区块**完全一致**
+         （直射点纬度/经度 · 极昼极夜纬度范围 · 黄赤交角/地轴倾角 · 公转面积速度 ·
+         公转瞬时线/角速度 · 所处时段）；数值由主模块 SUN_BRIDGE.factPanel() 同源产出，
+         逐项显隐跟随「光照系统 › 时间面板数据」的开关。 -->
+    <div class="facts">
+      <div id="svFSubLatBox"><b id="svFDecl">—</b><i>太阳直射点纬度</i></div>
+      <div id="svFSubLonBox"><b id="svFSubLon">—</b><i>直射点经度</i></div>
+      <div id="svFPolarDayBox"><b id="svFPolarDay">—</b><i>极昼纬度范围</i></div>
+      <div id="svFPolarNightBox"><b id="svFPolarNight">—</b><i>极夜纬度范围</i></div>
+      <div id="svFObliqBox"><b id="svFObliq">—</b><i>黄赤交角</i></div>
+      <div id="svFTiltBox"><b id="svFTilt">—</b><i>地轴倾角</i></div>
+      <div class="fact-wide" id="svFOrbAreaBox"><b id="svFOrbArea">—</b><i>地球公转面积速度</i></div>
+      <div class="fact-wide" id="svFOrbVBox">
+        <b id="svFOrbV1">—</b>
+        <b id="svFOrbV2">—</b>
+        <i>地球公转瞬时线速度 / 角速度</i>
+      </div>
+      <div class="fact-wide"><b id="svFSeason">—</b><i>所处时段</i></div>
+    </div>
+    </div><!-- /.svtt-body -->
+  </section>
+
+  <!-- 下：观测点与时间控制面板（v31 需求十一；★ v37 需求二·5 按示意图重排：
+       横排 / 竖排可切换 · 标题右侧显著色数值 · 滑块节点标注 · 本初子午线标记） -->
+  <section id="svTimeBar" class="card sv-only sv-on">
+    <div class="card-head">
+      <h2><i class="hd-ico">⏱️</i>观测点与时间控制</h2>
+      <button class="link" id="svTbCollapse" data-ic="fold">折叠</button>
+    </div>
+    <div class="svtb-body">
+      <div class="svtb-cols" id="svTbCols">
+
+        <!-- ===== 左：观测点定位 ===== -->
+        <div class="svtb-col">
+          <div class="svtb-ttl"><i class="hd-ico">📍</i><span class="svtb-ttl-t">观测点位置</span><span class="svtb-val" id="svTbPos">—</span></div>
+          <div class="svtb-row sl">
+            <span class="svtb-cap">纬度</span>
+            <div class="svtb-slider">
+              <input type="range" id="svLat" min="-90" max="90" step="0.1" value="39.9" />
+              <!-- 重要纬度节点（极圈 / 回归线 / 赤道）：圆点骑在滑轨上，注释在正下方，可点击跳转 -->
+              <div class="svtb-nodes" id="svLatNodes"></div>
+            </div>
+            <output id="svOutLat">—</output>
+          </div>
+          <div class="svtb-row sl">
+            <span class="svtb-cap">经度</span>
+            <div class="svtb-slider">
+              <input type="range" id="svLon" min="-180" max="180" step="0.1" value="116.4" />
+              <!-- 本初子午线（0°）标记 + 日界线（±180°） -->
+              <div class="svtb-nodes" id="svLonNodes"></div>
+            </div>
+            <output id="svOutLon">—</output>
+          </div>
+          <div class="svtb-row wrap">
+            <span class="svtb-cap">预设地点</span>
+            <span id="svObsPresets" class="svtb-presets"></span>
+          </div>
+          <div class="svtb-row wrap">
+            <span class="svtb-cap">自定义</span>
+            <input type="number" id="svObsLatN" step="0.1" class="svtb-num" title="纬度" />
+            <input type="number" id="svObsLonN" step="0.1" class="svtb-num" title="经度" />
+            <button class="btn xs" id="svObsApply" type="button">应用</button>
+            <span id="svObsErr" class="svtb-err"></span>
+          </div>
+        </div>
+
+        <!-- ===== 右：时间设置 ===== -->
+        <div class="svtb-col">
+          <div class="svtb-ttl"><i class="hd-ico">🕐</i><span class="svtb-ttl-t">时间设置</span><span class="svtb-cap">（地方太阳时）</span><span class="svtb-val" id="svTbLst">--:--:--</span></div>
+          <div class="svtb-row sl">
+            <div class="svtb-slider wide">
+              <div class="svtb-track">
+                <div class="svtb-bar"><span class="svtb-day" id="svDaySeg"></span><span class="svtb-night" id="svNightSeg"></span></div>
+                <!-- ★ v44（需求三）：日出 / 日中天 / 日落原先既有**竖线**（svEdgeRise / svEdgeNoon /
+                     svEdgeSet）又有**关键圆点**（svSunNodes）——同一信息的两套画法互相压字。
+                     按需求只保留圆点，三根竖线连同 sunview.js 里的写点一并删除。 -->
+                <div class="svtb-nodes" id="svSunNodes"></div>
+                <input type="range" id="svHour" min="0" max="1439" step="1" value="720" />
+              </div>
+            </div>
+          </div>
+          <div class="svtb-row sl">
+            <span class="svtb-cap">年月日</span>
+            <div class="svtb-slider">
+              <input type="range" id="svDate" min="1" max="365" step="1" value="1" />
+              <!-- ★ v43（需求一·5）：**只保留二分二至 4 个关键点**（v38 的 12 个月份节点已取消，
+                   此前与二分二至标注互相压字）。圆点内嵌轨道中线，点击直接跳转对应日期。 -->
+              <div class="svtb-nodes" id="svDateNodes"></div>
+            </div>
+            <output id="svOutDate">—</output>
+          </div>
+          <!-- ★ v43（需求一·5）：v36 曾在此加了一行「春分/夏至/秋分/冬至」按钮 ——
+               与日期滑块上的二分二至关键点功能完全重复，且与月份标注互相压字，整行删除。 -->
+          <div class="svtb-row">
+            <div class="svtb-spd">
+              <span class="svtb-cap">播放速度</span>
+              <input type="range" id="svSpeed" min="0" max="1000" step="1" />
+              <output id="svOutSpeed">—</output>
+            </div>
+            <button class="btn play" id="svBtnPlay">暂停</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- 右上（太阳视运动）：观测点数据面板（v32 需求二：默认显示、可关闭，格式与主模块统一） -->
+  <section id="svMonitor" class="card sv-only">
+    <div class="card-head">
+      <h2><i class="hd-ico">📍</i>观测点数据</h2>
+      <button class="link" id="svMonCollapse" data-ic="fold">折叠</button>
+    </div>
+    <!-- v34（面板规格）：观测点数据面板逐行对齐《副设置面板 › 观察与测量 › 数据面板》。
+         顺序按「定位 → 时间 → 昼夜 → 太阳 → 日出日落 → 派生量」排列，便于从上到下读。 -->
+    <div class="svmon-body" id="svMonBody">
+      <div class="svmon-row" id="svmRowPos"><i>位置（纬度 / 经度）</i><b id="svmPos">—</b></div>
+      <div class="svmon-row" id="svmRowLst"><i>地方时</i><b id="svmLst">—</b></div>
+      <div class="svmon-row" id="svmRowTerm"><i>节气</i><b id="svmTerm">—</b></div>
+      <div class="svmon-row" id="svmRowTz"><i>时区</i><b id="svmTz">—</b></div>
+      <div class="svmon-row" id="svmDnRow"><i>昼夜状态</i><b id="svmDayNight">—</b></div>
+      <div class="svmon-row" id="svmRowLen"><i>当地昼长</i><b id="svmDayLen">—</b></div>
+      <div class="svmon-row" id="svmRowYlen"><i>全年昼长极值</i><b id="svmYlen">—</b></div>
+      <div class="svmon-row" id="svmRowAz"><i>太阳方位</i><b id="svmAz">—</b></div>
+      <div class="svmon-row" id="svmRowAlt"><i>瞬时太阳高度角</i><b id="svmAlt">—</b></div>
+      <div class="svmon-row" id="svmRowSub"><i>太阳直射点（纬度 / 经度）</i><b id="svmSub">—</b></div>
+      <div class="svmon-row" id="svmRowRise"><i>日出 / 日落时刻</i><b id="svmRise">—</b></div>
+      <div class="svmon-row" id="svmRowRaz"><i>日出日落方位角</i><b id="svmRaz">—</b></div>
+      <div class="svmon-row" id="svmRowNoon"><i>正午太阳高度</i><b id="svmNoon">—</b></div>
+      <div class="svmon-row" id="svmRowLv"><i>自转线速度</i><b id="svmLv">—</b></div>
+      <div class="svmon-row" id="svmRowAv"><i>自转角速度</i><b id="svmAv">—</b></div>
+    </div>
+  </section>
+
+  <!-- 右下：3 个悬浮窗（v31 需求十：标题改名「观测点位置」/「天球视图」，观测点实时同步） -->
+  <section id="svWinEarth" class="card svwin sv-only sv-on">
+    <div class="card-head"><h2><i class="hd-ico">🌍</i>观测点位置</h2>
+      <button class="link sv-win-collapse" data-ic="fold">折叠</button>
+      <button class="link sv-win-close" data-ic="close">关闭</button></div>
+    <div class="card-body"><canvas id="svCvEarth"></canvas>
+      <!-- ★ 本次（需求一·3）：底部文案固定为「观测点正面」。
+           小窗姿态已由几何保证（绕地轴 Y 的 yaw 旋转 ⇒ 地轴屏幕竖直、观测点恒在
+           正面中经线上），故这里是一句**静态**说明；sunview.js 里原先每帧写
+           经纬度的 setTxt('svWinEarthTx', ...) 已删除，两者不再互相覆盖。
+           经纬度请看「观测点数据」面板。 -->
+      <div class="svwin-foot"><span class="dim" id="svWinEarthTx">观测点正面</span></div></div>
+  </section>
+  <section id="svWinSky" class="card svwin sv-only sv-on">
+    <div class="card-head"><h2><i class="hd-ico">🌌</i>天球视图</h2>
+      <button class="link sv-win-collapse" data-ic="fold">折叠</button>
+      <button class="link sv-win-close" data-ic="close">关闭</button></div>
+    <div class="card-body"><canvas id="svCvSky"></canvas>
+      <div class="svwin-foot"><span class="dim" id="svWinSkyTx">天球 · 太阳位置</span></div></div>
+  </section>
+  <section id="svWinGround" class="card svwin sv-only sv-on">
+    <div class="card-head"><h2><i class="hd-ico">🏙️</i>地面全景</h2>
+      <button class="link sv-win-collapse" data-ic="fold">折叠</button>
+      <button class="link sv-win-close" data-ic="close">关闭</button></div>
+    <div class="card-body"><canvas id="svCvGround"></canvas>
+      <div class="svwin-foot"><button class="btn xs" id="svGroundViewBtn">斜视图</button>
+        <span class="dim">点击切换视角</span></div></div>
+  </section>
+
+  <!-- =====================================================================
+       v31（需求八）：自转 / 公转 / 综合视图的 5 个悬浮窗 ——
+         · 全球昼夜实时变化（墨卡托投影昼夜图，阴影与地球表面一致）
+         · 北极视图 / 南极视图 / 地球公转示意 / 太阳直射点回归运动
+       一律沿用 .card 毛玻璃外观，可拖动 / 按比例缩放 / 内容自适应填满；
+       显隐由顶部【面板】菜单勾选，并计入位置与尺寸记忆。
+       ====================================================================== -->
+  <div id="mvWins">
+    <section id="mvWinMap" class="card mvwin">
+      <div class="card-head"><h2><i class="hd-ico">🌗</i>全球昼夜实时变化</h2>
+        <output class="dim" id="mvMapInfo">—</output>
+        <button class="link mv-win-collapse" data-ic="fold">折叠</button>
+        <button class="link mv-win-close" data-ic="close">关闭</button></div>
+      <div class="card-body"><canvas id="mvCvMap"></canvas>
+        <div class="mvwin-foot"><span class="dim">亮色为昼半球 · 深色为夜半球 · 分界线随时间实时移动</span></div></div>
+    </section>
+    <section id="mvWinOrbit" class="card mvwin">
+      <div class="card-head" title="地球公转示意图：与「综合视图 › 地球公转示意」窗完全一致｜窗内拖动旋转 · 滚轮缩放 · 双击复位"><h2><i class="hd-ico">🛰️</i>地球公转示意图</h2>
+        <button class="link mv-win-collapse" data-ic="fold">折叠</button>
+        <button class="link mv-win-close" data-ic="close">关闭</button></div>
+      <div class="card-body"><canvas id="mvCvOrbit"></canvas></div>
+    </section>
+    <section id="mvWinSide" class="card mvwin">
+      <div class="card-head" title="地球侧视图：与「综合视图 › 地球侧视」窗完全一致｜窗内拖动旋转 · 滚轮缩放 · 双击复位"><h2><i class="hd-ico">🌍</i>地球侧视图</h2>
+        <button class="link mv-win-collapse" data-ic="fold">折叠</button>
+        <button class="link mv-win-close" data-ic="close">关闭</button></div>
+      <div class="card-body"><canvas id="mvCvSide"></canvas></div>
+    </section>
+    <section id="mvWinSub" class="card mvwin">
+      <div class="card-head" title="太阳直射点回归运动：与「综合视图 › 直射点回归运动」窗完全一致｜窗内拖动旋转 · 滚轮缩放 · 双击复位"><h2><i class="hd-ico">🎯</i>太阳直射点回归运动</h2>
+        <button class="link mv-win-collapse" data-ic="fold">折叠</button>
+        <button class="link mv-win-close" data-ic="close">关闭</button></div>
+      <div class="card-body"><canvas id="mvCvSub"></canvas></div>
+    </section>
+    <section id="mvWinNorth" class="card mvwin">
+      <div class="card-head" title="北极视图：与「综合视图 › 北极俯视」窗完全一致｜窗内拖动旋转 · 滚轮缩放 · 双击复位"><h2><i class="hd-ico">🧭</i>北极视图</h2>
+        <button class="link mv-win-collapse" data-ic="fold">折叠</button>
+        <button class="link mv-win-close" data-ic="close">关闭</button></div>
+      <div class="card-body"><canvas id="mvCvNorth"></canvas></div>
+    </section>
+    <section id="mvWinSouth" class="card mvwin">
+      <div class="card-head" title="南极视图：与「综合视图 › 南极俯视」窗完全一致｜窗内拖动旋转 · 滚轮缩放 · 双击复位"><h2><i class="hd-ico">🧭</i>南极视图</h2>
+        <button class="link mv-win-collapse" data-ic="fold">折叠</button>
+        <button class="link mv-win-close" data-ic="close">关闭</button></div>
+      <div class="card-body"><canvas id="mvCvSouth"></canvas></div>
+    </section>
+  </div>
+
+  <!-- 地面东南西北方位标（DOM 覆盖层，随相机旋转仍固定在地面对应方位） -->
+  <div id="svDirMarks"></div>
+
+  <!-- ★ v39（需求二·3）：室内东南西北方位标（与地面方向标同一开关、同一套样式） -->
+  <div id="svIndoorDirMarks"></div>
+
+  <!-- ★ v39（需求三）：太阳视运动综合视图（多窗组合，自动铺满屏幕） -->
+  <div id="svComboUI"></div>
+
+  <!-- 第一人称 HUD -->
+  <div id="svFpHud">
+    <div class="sv-badge">第一人称视角 · 观测者</div>
+    <div id="svCompass">
+      <div class="svc-ring"></div>
+      <div class="svc-lbl n">北</div><div class="svc-lbl s">南</div>
+      <div class="svc-lbl e">东</div><div class="svc-lbl w">西</div>
+      <div class="svc-needle" id="svCompassNeedle"></div>
+      <div class="svc-read" id="svCompassRead">朝向 0°</div>
+    </div>
+    <div class="sv-fpbtns">
+      <button class="btn" id="svSunflower" type="button" style="position:relative">
+        <span aria-hidden="true">🌻</span><span class="txi">锁定太阳</span>
+        <span class="sv-sf-tip" id="svSfTip">镜头锁定太阳，随时间自动跟随</span>
+      </button>
+      <button class="btn warn" id="svExitFp" type="button">退出第一视角</button>
+    </div>
+    <div class="sv-fpkeys">WASD / 方向键：移动　鼠标拖拽：转头</div>
+  </div>
+
+  <button class="btn warn" id="svExitIndoor" type="button">退出室内</button>
+  <!-- ★ v44（需求八）：物影测量的「退出显示」按钮 —— 由双击物体弹出的菜单
+       「测量物影」唤起；测量图形显示期间常驻右下角（与「退出室内」同位置、同状态Z序），
+       点击即隐藏全部物影测量图形（S.meas.on=false）并清掉 measKeep。 -->
+  <button class="btn warn" id="svExitMeas" type="button">退出物影测量</button>
+  <!-- ★ v39（需求三）：退出太阳视运动综合视图 -->
+  <button class="btn warn" id="svExitCombo" type="button">退出综合视图</button>
+
+  <!-- 对象操作菜单（双击模型弹出） -->
+  <div id="svObjMenu" class="card"></div>
+
+  <!-- ★ v35（需求十五）：原顶部【面板】菜单（#panelMenu）已删除，
+       功能迁入两棵设置菜单的「界面与主题 › 面板与悬浮窗」。 -->
+
+  <!-- 弹窗宿主 -->
+  <div id="svModalHost"><div class="svm-mask"></div><div class="svm-card card" id="svModalCard"></div></div>
+
+  <!-- 轻提示 -->
+  <div id="svToast"></div>
+
+  <!-- v30：太阳视运动模块（放在 DOM 之后加载，确保所有面板容器已就绪） -->
+  <script src="sunview.js" defer></script>
+
+</body>
+</html>
